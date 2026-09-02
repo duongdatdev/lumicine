@@ -1,0 +1,31 @@
+# Build output
+**/bin/
+**/obj/
+**/.vs/
+**/.local/
+**/.vscode/
+TestResults/
+coverage/
+*.log
+pgdata/
+postgres-data/
+
+# Local configuration and secrets
+**/appsettings.Local.json
+**/appsettings.*.Local.json
+**/.env
+**/.env.*
+!.env.example
+secrets.json
+
+# User and OS files
+*.user
+*.suo
+*.swp
+Thumbs.db
+.DS_Store
+
+# NuGet and IDE caches
+*.nupkg
+*.snupkg
+.idea/
