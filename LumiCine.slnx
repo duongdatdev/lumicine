@@ -1,0 +1,8 @@
+<Solution>
+  <Folder Name="/backend/">
+    <Project Path="backend/LumiCine.API/LumiCine.API.csproj" />
+    <Project Path="backend/LumiCine.Application/LumiCine.Application.csproj" />
+    <Project Path="backend/LumiCine.Domain/LumiCine.Domain.csproj" />
+    <Project Path="backend/LumiCine.Infrastructure/LumiCine.Infrastructure.csproj" />
+  </Folder>
+</Solution>
