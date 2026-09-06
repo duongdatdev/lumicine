@@ -1,7 +1,22 @@
 using LumiCine.Infrastructure;
+using Microsoft.AspNetCore.Mvc;
 
 var builder = WebApplication.CreateBuilder(args);
-builder.Services.AddControllers();
+builder.Services.AddControllers().ConfigureApiBehaviorOptions(options =>
+{
+    options.InvalidModelStateResponseFactory = context =>
+    {
+        var problem = new ValidationProblemDetails(context.ModelState)
+        {
+            Status = StatusCodes.Status400BadRequest
+        };
+        problem.Extensions["traceId"] = context.HttpContext.TraceIdentifier;
+
+        var result = new BadRequestObjectResult(problem);
+        result.ContentTypes.Add("application/problem+json");
+        return result;
+    };
+});
 builder.Services.AddOpenApi();
 builder.Services.AddInfrastructure(builder.Configuration);
 
