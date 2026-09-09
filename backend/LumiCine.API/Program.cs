@@ -1,3 +1,4 @@
+using LumiCine.API.Exceptions;
 using LumiCine.Infrastructure;
 using Microsoft.AspNetCore.Mvc;
 
@@ -17,10 +18,15 @@ builder.Services.AddControllers().ConfigureApiBehaviorOptions(options =>
         return result;
     };
 });
+builder.Services.AddProblemDetails(options =>
+    options.CustomizeProblemDetails = context =>
+        context.ProblemDetails.Extensions["traceId"] = context.HttpContext.TraceIdentifier);
+builder.Services.AddExceptionHandler<GlobalExceptionHandler>();
 builder.Services.AddOpenApi();
 builder.Services.AddInfrastructure(builder.Configuration);
 
 var app = builder.Build();
+app.UseExceptionHandler();
 app.MapControllers();
 
 if (app.Environment.IsDevelopment())
