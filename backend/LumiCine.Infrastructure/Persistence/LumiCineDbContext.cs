@@ -4,6 +4,7 @@ using LumiCine.Domain.Cinemas;
 using LumiCine.Domain.Scheduling;
 using LumiCine.Application.Accounts;
 using LumiCine.Infrastructure.Identity;
+using LumiCine.Infrastructure.Authentication;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore;
@@ -24,6 +25,8 @@ public sealed class LumiCineDbContext(DbContextOptions<LumiCineDbContext> option
     public DbSet<Booking> Bookings => Set<Booking>();
     public DbSet<BookingItem> BookingItems => Set<BookingItem>();
     public DbSet<Ticket> Tickets => Set<Ticket>();
+    public DbSet<AuthSession> AuthSessions => Set<AuthSession>();
+    public DbSet<RefreshToken> RefreshTokens => Set<RefreshToken>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
