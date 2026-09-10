@@ -52,12 +52,17 @@ namespace LumiCine.Infrastructure.Persistence.Migrations
                     b.Property<DateTime?>("UpdatedAtUtc")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<Guid?>("UserId")
+                        .HasColumnType("uuid");
+
                     b.HasKey("Id");
 
                     b.HasIndex("Code")
                         .IsUnique();
 
                     b.HasIndex("ShowtimeId");
+
+                    b.HasIndex("UserId");
 
                     b.ToTable("Bookings", null, t =>
                         {
@@ -717,6 +722,11 @@ namespace LumiCine.Infrastructure.Persistence.Migrations
                         .HasForeignKey("ShowtimeId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
+
+                    b.HasOne("LumiCine.Infrastructure.Identity.ApplicationUser", null)
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Restrict);
                 });
 
             modelBuilder.Entity("LumiCine.Domain.Bookings.BookingItem", b =>

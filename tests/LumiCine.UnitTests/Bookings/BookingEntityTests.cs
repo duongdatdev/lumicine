@@ -10,6 +10,7 @@ public sealed class BookingEntityTests
         Assert.Throws<ArgumentException>(() => new Booking(Guid.NewGuid(), " ", Guid.NewGuid(), 10, DateTime.UtcNow));
         Assert.Throws<ArgumentException>(() => new Booking(Guid.NewGuid(), "B001", Guid.Empty, 10, DateTime.UtcNow));
         Assert.Throws<ArgumentOutOfRangeException>(() => new Booking(Guid.NewGuid(), "B001", Guid.NewGuid(), -1, DateTime.UtcNow));
+        Assert.Throws<ArgumentException>(() => new Booking(Guid.NewGuid(), "B001", Guid.NewGuid(), 10, DateTime.UtcNow, userId: Guid.Empty));
     }
 
     [Fact]
@@ -41,6 +42,7 @@ public sealed class BookingEntityTests
 
         Assert.Equal(0, booking.TotalAmount);
         Assert.Equal(BookingStatus.Pending, booking.Status);
+        Assert.Null(booking.UserId);
         Assert.Equal(TicketStatus.Issued, ticket.Status);
     }
 }

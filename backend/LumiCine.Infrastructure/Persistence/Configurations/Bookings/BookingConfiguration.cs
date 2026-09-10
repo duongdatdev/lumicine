@@ -1,5 +1,6 @@
 using LumiCine.Domain.Bookings;
 using LumiCine.Domain.Scheduling;
+using LumiCine.Infrastructure.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 
@@ -25,6 +26,7 @@ public sealed class BookingConfiguration : IEntityTypeConfiguration<Booking>
         builder.Property(x => x.UpdatedAtUtc).HasColumnType("timestamp with time zone");
         builder.HasAlternateKey(x => new { x.Id, x.ShowtimeId });
         builder.HasOne<Showtime>().WithMany().HasForeignKey(x => x.ShowtimeId).OnDelete(DeleteBehavior.Restrict);
+        builder.HasOne<ApplicationUser>().WithMany().HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.Restrict);
         builder.HasIndex(x => x.Code).IsUnique();
     }
 }

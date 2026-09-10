@@ -14,7 +14,8 @@ public sealed class Booking
         DateTime createdAtUtc,
         BookingStatus status = BookingStatus.Pending,
         DateTime? holdExpiresAtUtc = null,
-        DateTime? updatedAtUtc = null)
+        DateTime? updatedAtUtc = null,
+        Guid? userId = null)
     {
         Id = EntityGuard.Id(id, nameof(id));
         Code = EntityGuard.RequiredText(code, 40, nameof(code));
@@ -24,11 +25,13 @@ public sealed class Booking
         TotalAmount = EntityGuard.NonNegative(totalAmount, nameof(totalAmount));
         CreatedAtUtc = EntityGuard.Utc(createdAtUtc, nameof(createdAtUtc));
         UpdatedAtUtc = EntityGuard.OptionalUtc(updatedAtUtc, nameof(updatedAtUtc));
+        UserId = userId is null ? null : EntityGuard.Id(userId.Value, nameof(userId));
     }
 
     public Guid Id { get; private set; }
     public string Code { get; private set; }
     public Guid ShowtimeId { get; private set; }
+    public Guid? UserId { get; private set; }
     public BookingStatus Status { get; private set; }
     public DateTime? HoldExpiresAtUtc { get; private set; }
     public decimal TotalAmount { get; private set; }
