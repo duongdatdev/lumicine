@@ -582,6 +582,29 @@ namespace LumiCine.Infrastructure.Persistence.Migrations
                         .HasDatabaseName("RoleNameIndex");
 
                     b.ToTable("Roles", (string)null);
+
+                    b.HasData(
+                        new
+                        {
+                            Id = new Guid("71000000-0000-0000-0000-000000000001"),
+                            ConcurrencyStamp = "lumicine-role-customer-v1",
+                            Name = "Customer",
+                            NormalizedName = "CUSTOMER"
+                        },
+                        new
+                        {
+                            Id = new Guid("71000000-0000-0000-0000-000000000002"),
+                            ConcurrencyStamp = "lumicine-role-staff-v1",
+                            Name = "Staff",
+                            NormalizedName = "STAFF"
+                        },
+                        new
+                        {
+                            Id = new Guid("71000000-0000-0000-0000-000000000003"),
+                            ConcurrencyStamp = "lumicine-role-admin-v1",
+                            Name = "Admin",
+                            NormalizedName = "ADMIN"
+                        });
                 });
 
             modelBuilder.Entity("Microsoft.AspNetCore.Identity.IdentityRoleClaim<System.Guid>", b =>

@@ -51,4 +51,30 @@ public sealed class IdentityPersistenceTests(PostgresDatabaseFixture fixture)
         Assert.Empty(await db.Database.GetPendingMigrationsAsync());
         Assert.False(db.Database.HasPendingModelChanges());
     }
+
+    [Fact]
+    public async Task Account_roles_are_seeded_and_normalized_names_are_unique()
+    {
+        await using var db = fixture.CreateDbContext();
+        var roles = await db.Roles.AsNoTracking().OrderBy(role => role.Name).ToArrayAsync();
+
+        Assert.Equal(3, roles.Length);
+        Assert.Collection(
+            roles,
+            role => Assert.Equal(("Admin", "ADMIN"), (role.Name, role.NormalizedName)),
+            role => Assert.Equal(("Customer", "CUSTOMER"), (role.Name, role.NormalizedName)),
+            role => Assert.Equal(("Staff", "STAFF"), (role.Name, role.NormalizedName)));
+        Assert.Equal(Guid.Parse("71000000-0000-0000-0000-000000000003"), roles[0].Id);
+        Assert.Equal(Guid.Parse("71000000-0000-0000-0000-000000000001"), roles[1].Id);
+        Assert.Equal(Guid.Parse("71000000-0000-0000-0000-000000000002"), roles[2].Id);
+
+        FormattableString duplicateNormalizedName = $"""
+            INSERT INTO "Roles" ("Id", "Name", "NormalizedName", "ConcurrencyStamp")
+            VALUES ({Guid.NewGuid()}, {"Other"}, {"CUSTOMER"}, {"unique-test-stamp"})
+            """;
+
+        await DatabaseAssertions.ThrowsSqlStateAsync(
+            () => db.Database.ExecuteSqlInterpolatedAsync(duplicateNormalizedName),
+            PostgresErrorCodes.UniqueViolation);
+    }
 }

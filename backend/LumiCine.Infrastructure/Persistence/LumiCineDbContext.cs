@@ -2,6 +2,7 @@ using LumiCine.Domain.Bookings;
 using LumiCine.Domain.Catalog;
 using LumiCine.Domain.Cinemas;
 using LumiCine.Domain.Scheduling;
+using LumiCine.Application.Accounts;
 using LumiCine.Infrastructure.Identity;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
@@ -38,7 +39,32 @@ public sealed class LumiCineDbContext(DbContextOptions<LumiCineDbContext> option
             entity.Property(user => user.CreatedAtUtc).IsRequired();
             entity.HasIndex(user => user.NormalizedEmail).HasDatabaseName("EmailIndex").IsUnique();
         });
-        modelBuilder.Entity<IdentityRole<Guid>>().ToTable("Roles");
+        modelBuilder.Entity<IdentityRole<Guid>>(entity =>
+        {
+            entity.ToTable("Roles");
+            entity.HasData(
+                new IdentityRole<Guid>
+                {
+                    Id = Guid.Parse("71000000-0000-0000-0000-000000000001"),
+                    Name = RoleNames.Customer,
+                    NormalizedName = "CUSTOMER",
+                    ConcurrencyStamp = "lumicine-role-customer-v1"
+                },
+                new IdentityRole<Guid>
+                {
+                    Id = Guid.Parse("71000000-0000-0000-0000-000000000002"),
+                    Name = RoleNames.Staff,
+                    NormalizedName = "STAFF",
+                    ConcurrencyStamp = "lumicine-role-staff-v1"
+                },
+                new IdentityRole<Guid>
+                {
+                    Id = Guid.Parse("71000000-0000-0000-0000-000000000003"),
+                    Name = RoleNames.Admin,
+                    NormalizedName = "ADMIN",
+                    ConcurrencyStamp = "lumicine-role-admin-v1"
+                });
+        });
         modelBuilder.Entity<IdentityUserRole<Guid>>().ToTable("UserRoles");
         modelBuilder.Entity<IdentityUserClaim<Guid>>().ToTable("UserClaims");
         modelBuilder.Entity<IdentityUserLogin<Guid>>().ToTable("UserLogins");
