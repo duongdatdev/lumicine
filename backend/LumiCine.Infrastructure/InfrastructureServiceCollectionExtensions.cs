@@ -1,9 +1,12 @@
 using LumiCine.Infrastructure.Persistence;
 using LumiCine.Infrastructure.Identity;
+using LumiCine.Infrastructure.Authentication;
+using LumiCine.Application.Accounts;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace LumiCine.Infrastructure;
 
@@ -11,6 +14,13 @@ public static class InfrastructureServiceCollectionExtensions
 {
     public static IServiceCollection AddInfrastructure(this IServiceCollection services, IConfiguration configuration)
     {
+        services.AddOptions<JwtOptions>()
+            .Bind(configuration.GetSection(JwtOptions.SectionName))
+            .Validate(options => options.IsValid(), "Jwt configuration requires an issuer, audience, and valid private RSA PKCS#8 key of at least 2048 bits.")
+            .ValidateOnStart();
+        services.TryAddSingleton(TimeProvider.System);
+        services.AddSingleton<IAccessTokenIssuer, JwtAccessTokenIssuer>();
+
         services.AddIdentityCore<ApplicationUser>(options =>
             {
                 options.User.RequireUniqueEmail = true;
