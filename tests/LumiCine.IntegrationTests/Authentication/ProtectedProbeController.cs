@@ -1,4 +1,5 @@
 using System.IdentityModel.Tokens.Jwt;
+using LumiCine.API.Authentication;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
@@ -23,4 +24,8 @@ public sealed class ProtectedProbeController : ControllerBase
     [HttpGet("admin")]
     [Authorize(Roles = "Admin")]
     public IActionResult Admin() => Ok("admin");
+
+    [HttpPost("csrf-probe")]
+    [ServiceFilter(typeof(CsrfValidationFilter))]
+    public IActionResult CsrfProbe() => Ok("accepted");
 }
