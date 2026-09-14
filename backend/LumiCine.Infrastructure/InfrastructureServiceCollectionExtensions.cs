@@ -41,6 +41,7 @@ public static class InfrastructureServiceCollectionExtensions
             })
             .AddRoles<IdentityRole<Guid>>()
             .AddEntityFrameworkStores<LumiCineDbContext>();
+        services.AddAccountEmailTokens(configuration);
 
         services.AddDbContext<LumiCineDbContext>((serviceProvider, options) =>
         {
