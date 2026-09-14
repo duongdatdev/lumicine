@@ -20,6 +20,7 @@ public static class InfrastructureServiceCollectionExtensions
             .ValidateOnStart();
         services.TryAddSingleton(TimeProvider.System);
         services.AddSingleton<IAccessTokenIssuer, JwtAccessTokenIssuer>();
+        services.AddSingleton<JwtSigningKey>();
 
         services.AddIdentityCore<ApplicationUser>(options =>
             {

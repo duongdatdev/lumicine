@@ -1,6 +1,7 @@
 using System.Security.Cryptography;
 using LumiCine.Application.Accounts;
 using LumiCine.Infrastructure;
+using LumiCine.Infrastructure.Authentication;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
@@ -63,6 +64,36 @@ public sealed class JwtAccessTokenIssuerTests
         var privateKeyPem = weakRsa.ExportPkcs8PrivateKeyPem();
         AssertInvalidConfiguration(privateKeyPem);
         AssertInvalidConfiguration(null);
+    }
+
+    [Fact]
+    public async Task Repeated_service_providers_issue_tokens_valid_with_each_public_key()
+    {
+        using var rsa = RSA.Create(2048);
+        var privateKeyPem = rsa.ExportPkcs8PrivateKeyPem();
+        var handler = new JsonWebTokenHandler();
+
+        for (var index = 0; index < 2; index++)
+        {
+            using var serviceProvider = BuildServiceProvider(privateKeyPem, TimeProvider.System);
+            var token = serviceProvider.GetRequiredService<IAccessTokenIssuer>()
+                .Issue(Guid.NewGuid(), Guid.NewGuid(), ["Customer"]);
+            var publicKey = serviceProvider.GetRequiredService<JwtSigningKey>().ValidationKey;
+            var validation = await handler.ValidateTokenAsync(token.Value, new TokenValidationParameters
+            {
+                ValidateIssuerSigningKey = true,
+                IssuerSigningKey = publicKey,
+                ValidAlgorithms = [SecurityAlgorithms.RsaSha256],
+                ValidateIssuer = true,
+                ValidIssuer = "LumiCine",
+                ValidateAudience = true,
+                ValidAudience = "LumiCine.Web",
+                ValidateLifetime = true,
+                ClockSkew = TimeSpan.Zero
+            });
+
+            Assert.True(validation.IsValid, validation.Exception?.GetType().Name);
+        }
     }
 
     private static void AssertInvalidConfiguration(string? privateKeyPem)
