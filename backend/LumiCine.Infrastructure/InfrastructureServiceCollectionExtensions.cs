@@ -2,6 +2,7 @@ using LumiCine.Infrastructure.Persistence;
 using LumiCine.Infrastructure.Identity;
 using LumiCine.Infrastructure.Authentication;
 using LumiCine.Application.Accounts;
+using LumiCine.Infrastructure.Email;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
@@ -22,6 +23,7 @@ public static class InfrastructureServiceCollectionExtensions
         services.AddSingleton<IAccessTokenIssuer, JwtAccessTokenIssuer>();
         services.AddSingleton<JwtSigningKey>();
         services.AddScoped<ISessionValidator, DatabaseSessionValidator>();
+        services.AddEmailDelivery(configuration);
 
         services.AddIdentityCore<ApplicationUser>(options =>
             {
