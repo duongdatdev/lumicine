@@ -1,13 +1,20 @@
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
 using System.Security.Cryptography;
+using LumiCine.IntegrationTests.Authentication;
 
 namespace LumiCine.IntegrationTests;
 
-public sealed class ApiWebApplicationFactory(string environment = "Development") : WebApplicationFactory<Program>
+public sealed class ApiWebApplicationFactory(
+    string environment = "Development",
+    string? connectionString = null,
+    bool includeTestControllers = false) : WebApplicationFactory<Program>
 {
-    private static readonly string JwtTestPrivateKeyPem = CreateJwtTestPrivateKeyPem();
+    private static readonly string TestJwtPrivateKeyPem = CreateJwtTestPrivateKeyPem();
+    internal static string JwtTestPrivateKeyPem => TestJwtPrivateKeyPem;
 
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
@@ -17,9 +24,18 @@ public sealed class ApiWebApplicationFactory(string environment = "Development")
         {
             ["Jwt:Issuer"] = "LumiCine",
             ["Jwt:Audience"] = "LumiCine.Web",
-            ["Jwt:PrivateKeyPem"] = JwtTestPrivateKeyPem
+            ["Jwt:PrivateKeyPem"] = TestJwtPrivateKeyPem
         };
+        if (connectionString is not null)
+        {
+            jwtTestSettings["ConnectionStrings:LumiCine"] = connectionString;
+        }
         builder.ConfigureAppConfiguration((_, configuration) => configuration.AddInMemoryCollection(jwtTestSettings));
+        if (includeTestControllers)
+        {
+            builder.ConfigureTestServices(services =>
+                services.AddControllers().AddApplicationPart(typeof(ProtectedProbeController).Assembly));
+        }
     }
 
     private static string CreateJwtTestPrivateKeyPem()

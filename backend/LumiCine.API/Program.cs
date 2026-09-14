@@ -1,4 +1,5 @@
 using LumiCine.API.Exceptions;
+using LumiCine.API.Authentication;
 using LumiCine.Infrastructure;
 using Microsoft.AspNetCore.Mvc;
 
@@ -30,9 +31,12 @@ builder.Services.AddProblemDetails(options =>
 builder.Services.AddExceptionHandler<GlobalExceptionHandler>();
 builder.Services.AddOpenApi();
 builder.Services.AddInfrastructure(builder.Configuration);
+builder.Services.AddJwtAuthentication();
 
 var app = builder.Build();
 app.UseExceptionHandler();
+app.UseAuthentication();
+app.UseAuthorization();
 app.MapControllers();
 
 if (app.Environment.IsDevelopment())
