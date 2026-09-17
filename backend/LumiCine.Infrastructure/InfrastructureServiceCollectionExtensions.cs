@@ -23,6 +23,7 @@ public static class InfrastructureServiceCollectionExtensions
         services.AddSingleton<IAccessTokenIssuer, JwtAccessTokenIssuer>();
         services.AddSingleton<JwtSigningKey>();
         services.AddScoped<ISessionValidator, DatabaseSessionValidator>();
+        services.AddScoped<IAccountRegistrationService, AccountRegistrationService>();
         services.AddEmailDelivery(configuration);
 
         services.AddIdentityCore<ApplicationUser>(options =>

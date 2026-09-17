@@ -5,21 +5,21 @@ namespace LumiCine.IntegrationTests;
 
 internal sealed record CapturedLog(string Category, LogLevel Level, string Message);
 
-internal sealed class CapturingLoggerProvider : ILoggerProvider
+internal sealed class CapturingLoggerProvider(LogLevel minimumLevel = LogLevel.Error) : ILoggerProvider
 {
     private readonly ConcurrentQueue<CapturedLog> _entries = new();
 
     public IReadOnlyCollection<CapturedLog> Entries => _entries.ToArray();
 
-    public ILogger CreateLogger(string categoryName) => new CapturingLogger(categoryName, _entries);
+    public ILogger CreateLogger(string categoryName) => new CapturingLogger(categoryName, _entries, minimumLevel);
 
     public void Dispose() { }
 
-    private sealed class CapturingLogger(string categoryName, ConcurrentQueue<CapturedLog> entries) : ILogger
+    private sealed class CapturingLogger(string categoryName, ConcurrentQueue<CapturedLog> entries, LogLevel minimumLevel) : ILogger
     {
         public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
 
-        public bool IsEnabled(LogLevel logLevel) => logLevel >= LogLevel.Error;
+        public bool IsEnabled(LogLevel logLevel) => logLevel >= minimumLevel;
 
         public void Log<TState>(
             LogLevel logLevel,
