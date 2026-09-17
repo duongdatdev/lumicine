@@ -25,6 +25,7 @@ public static class InfrastructureServiceCollectionExtensions
         services.AddScoped<ISessionValidator, DatabaseSessionValidator>();
         services.AddScoped<IAccountRegistrationService, AccountRegistrationService>();
         services.AddScoped<IAccountLoginService, AccountLoginService>();
+        services.AddScoped<IAccountRefreshService, AccountRefreshService>();
         services.AddScoped<IEmailConfirmationService, EmailConfirmationService>();
         services.AddEmailDelivery(configuration);
 

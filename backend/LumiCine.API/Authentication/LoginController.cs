@@ -8,7 +8,7 @@ namespace LumiCine.API.Controllers;
 
 [ApiController]
 [Route("api/auth")]
-public sealed class LoginController(IAccountLoginService accountLoginService) : ControllerBase
+public sealed class LoginController(IAccountLoginService accountLoginService, IAccountRefreshService accountRefreshService) : ControllerBase
 {
     private const string RefreshCookieName = "__Secure-LumiCine.Refresh";
 
@@ -36,6 +36,52 @@ public sealed class LoginController(IAccountLoginService accountLoginService) : 
         }
 
         Response.Headers.CacheControl = "no-store";
+        Response.Cookies.Append(RefreshCookieName, result.RefreshToken, new CookieOptions
+        {
+            HttpOnly = true,
+            Secure = true,
+            SameSite = SameSiteMode.Strict,
+            Path = "/api/auth",
+            Expires = new DateTimeOffset(result.RefreshTokenExpiresAtUtc)
+        });
+        return Ok(new LoginResponse(
+            result.AccessToken,
+            "Bearer",
+            result.ExpiresInSeconds,
+            new LoginUserResponse(result.UserId, result.Email, result.DisplayName, result.Roles)));
+    }
+
+    [HttpPost("refresh")]
+    [AllowAnonymous]
+    [ServiceFilter(typeof(CsrfValidationFilter))]
+    [ProducesResponseType(typeof(LoginResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status401Unauthorized)]
+    public async Task<IActionResult> Refresh(CancellationToken cancellationToken)
+    {
+        Response.Headers.CacheControl = "no-store";
+        Request.Cookies.TryGetValue(RefreshCookieName, out var refreshToken);
+        var result = await accountRefreshService.RefreshAsync(refreshToken ?? string.Empty, cancellationToken);
+        if (result is null)
+        {
+            Response.Cookies.Delete(RefreshCookieName, new CookieOptions
+            {
+                HttpOnly = true,
+                Secure = true,
+                SameSite = SameSiteMode.Strict,
+                Path = "/api/auth"
+            });
+            var problem = new ProblemDetails
+            {
+                Status = StatusCodes.Status401Unauthorized,
+                Title = "Unauthorized",
+                Type = "about:blank"
+            };
+            problem.Extensions["traceId"] = HttpContext.TraceIdentifier;
+            var unauthorized = new ObjectResult(problem) { StatusCode = StatusCodes.Status401Unauthorized };
+            unauthorized.ContentTypes.Add("application/problem+json");
+            return unauthorized;
+        }
+
         Response.Cookies.Append(RefreshCookieName, result.RefreshToken, new CookieOptions
         {
             HttpOnly = true,
