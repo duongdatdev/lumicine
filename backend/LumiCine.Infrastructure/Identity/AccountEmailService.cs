@@ -31,6 +31,18 @@ internal sealed class AccountEmailService(
             $"Confirm your email by opening this link:\n{link}"), cancellationToken);
     }
 
+    public async Task SendConfirmationForEmailAsync(string email, CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        var user = await userManager.FindByEmailAsync(email.Trim());
+        if (user is null || !user.IsActive || user.EmailConfirmed || string.IsNullOrWhiteSpace(user.Email))
+        {
+            return;
+        }
+
+        await SendConfirmationAsync(user.Id, cancellationToken);
+    }
+
     public async Task SendPasswordResetAsync(Guid userId, CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
