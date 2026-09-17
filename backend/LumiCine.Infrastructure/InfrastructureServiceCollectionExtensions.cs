@@ -24,6 +24,7 @@ public static class InfrastructureServiceCollectionExtensions
         services.AddSingleton<JwtSigningKey>();
         services.AddScoped<ISessionValidator, DatabaseSessionValidator>();
         services.AddScoped<IAccountRegistrationService, AccountRegistrationService>();
+        services.AddScoped<IAccountLoginService, AccountLoginService>();
         services.AddScoped<IEmailConfirmationService, EmailConfirmationService>();
         services.AddEmailDelivery(configuration);
 
@@ -42,7 +43,8 @@ public static class InfrastructureServiceCollectionExtensions
                 options.Lockout.DefaultLockoutTimeSpan = TimeSpan.FromMinutes(15);
             })
             .AddRoles<IdentityRole<Guid>>()
-            .AddEntityFrameworkStores<LumiCineDbContext>();
+            .AddEntityFrameworkStores<LumiCineDbContext>()
+            .AddSignInManager();
         services.AddAccountEmailTokens(configuration);
 
         services.AddDbContext<LumiCineDbContext>((serviceProvider, options) =>
