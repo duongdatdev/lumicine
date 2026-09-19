@@ -26,4 +26,27 @@ public sealed class AdminUsersController(IAdminUserService adminUserService) : C
         var user = await adminUserService.GetUserAsync(id, cancellationToken);
         return user is null ? Problem(statusCode: StatusCodes.Status404NotFound, title: "Not Found") : Ok(user);
     }
+
+    [HttpPut("{id:guid}/status")]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status409Conflict)]
+    public async Task<IActionResult> SetActive(Guid id, [FromBody] SetAdminUserStatusRequest request, CancellationToken cancellationToken)
+    {
+        var result = await adminUserService.SetActiveAsync(id, request.IsActive!.Value, cancellationToken);
+        return result switch
+        {
+            AdminUserStatusResult.Success => NoContent(),
+            AdminUserStatusResult.NotFound => Problem(statusCode: StatusCodes.Status404NotFound, title: "Not Found"),
+            AdminUserStatusResult.ProtectedAdmin or AdminUserStatusResult.Conflict =>
+                Problem(statusCode: StatusCodes.Status409Conflict, title: "Conflict"),
+            _ => throw new InvalidOperationException("Unknown admin user status result.")
+        };
+    }
+
+    public sealed record SetAdminUserStatusRequest
+    {
+        [Required]
+        public bool? IsActive { get; init; }
+    }
 }

@@ -1,5 +1,6 @@
 using LumiCine.Application.Accounts;
 using LumiCine.Infrastructure.Persistence;
+using LumiCine.Infrastructure.Authentication;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 
@@ -7,7 +8,8 @@ namespace LumiCine.Infrastructure.Identity;
 
 internal sealed class AdminUserService(
     UserManager<ApplicationUser> userManager,
-    LumiCineDbContext dbContext) : IAdminUserService
+    LumiCineDbContext dbContext,
+    TimeProvider timeProvider) : IAdminUserService
 {
     public async Task<AdminUserPage> GetUsersAsync(int page, int pageSize, CancellationToken cancellationToken = default)
     {
@@ -81,5 +83,69 @@ internal sealed class AdminUserService(
             user.EmailConfirmed,
             roles.Order(StringComparer.Ordinal).ToArray(),
             user.CreatedAtUtc);
+    }
+
+    public async Task<AdminUserStatusResult> SetActiveAsync(
+        Guid id,
+        bool isActive,
+        CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        await using var transaction = await dbContext.Database.BeginTransactionAsync(cancellationToken);
+        try
+        {
+            var user = await userManager.FindByIdAsync(id.ToString("D"));
+            cancellationToken.ThrowIfCancellationRequested();
+            if (user is null)
+            {
+                await transaction.RollbackAsync(CancellationToken.None);
+                return AdminUserStatusResult.NotFound;
+            }
+
+            var isAdmin = await userManager.IsInRoleAsync(user, RoleNames.Admin);
+            cancellationToken.ThrowIfCancellationRequested();
+            if (isAdmin)
+            {
+                await transaction.RollbackAsync(CancellationToken.None);
+                return AdminUserStatusResult.ProtectedAdmin;
+            }
+
+            var needsIdentityUpdate = user.IsActive != isActive;
+            user.IsActive = isActive;
+            if (isActive)
+            {
+                needsIdentityUpdate |= user.LockoutEnd is not null || user.AccessFailedCount != 0;
+                user.LockoutEnd = null;
+                user.AccessFailedCount = 0;
+            }
+
+            if (needsIdentityUpdate)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                var updateResult = await userManager.UpdateAsync(user);
+                cancellationToken.ThrowIfCancellationRequested();
+                if (!updateResult.Succeeded)
+                {
+                    await transaction.RollbackAsync(CancellationToken.None);
+                    return AdminUserStatusResult.Conflict;
+                }
+            }
+
+            if (!isActive)
+            {
+                var revokedAtUtc = timeProvider.GetUtcNow().UtcDateTime;
+                await dbContext.AuthSessions
+                    .Where(session => session.UserId == user.Id && session.RevokedAtUtc == null)
+                    .ExecuteUpdateAsync(update => update.SetProperty(session => session.RevokedAtUtc, revokedAtUtc), cancellationToken);
+            }
+
+            await transaction.CommitAsync(cancellationToken);
+            return AdminUserStatusResult.Success;
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            await transaction.RollbackAsync(CancellationToken.None);
+            return AdminUserStatusResult.Conflict;
+        }
     }
 }
