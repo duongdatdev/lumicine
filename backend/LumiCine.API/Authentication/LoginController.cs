@@ -8,7 +8,10 @@ namespace LumiCine.API.Controllers;
 
 [ApiController]
 [Route("api/auth")]
-public sealed class LoginController(IAccountLoginService accountLoginService, IAccountRefreshService accountRefreshService) : ControllerBase
+public sealed class LoginController(
+    IAccountLoginService accountLoginService,
+    IAccountRefreshService accountRefreshService,
+    IAccountLogoutService accountLogoutService) : ControllerBase
 {
     private const string RefreshCookieName = "__Secure-LumiCine.Refresh";
 
@@ -95,6 +98,26 @@ public sealed class LoginController(IAccountLoginService accountLoginService, IA
             "Bearer",
             result.ExpiresInSeconds,
             new LoginUserResponse(result.UserId, result.Email, result.DisplayName, result.Roles)));
+    }
+
+    [HttpPost("logout")]
+    [AllowAnonymous]
+    [ServiceFilter(typeof(CsrfValidationFilter))]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    public async Task<IActionResult> Logout(CancellationToken cancellationToken)
+    {
+        Response.Headers.CacheControl = "no-store";
+        Request.Cookies.TryGetValue(RefreshCookieName, out var refreshToken);
+        await accountLogoutService.LogoutAsync(refreshToken, cancellationToken);
+        Response.Cookies.Delete(RefreshCookieName, new CookieOptions
+        {
+            HttpOnly = true,
+            Secure = true,
+            SameSite = SameSiteMode.Strict,
+            Path = "/api/auth"
+        });
+        return NoContent();
     }
 }
 
