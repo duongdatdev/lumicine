@@ -62,6 +62,18 @@ internal sealed class AccountEmailService(
             $"Reset your password by opening this link:\n{link}"), cancellationToken);
     }
 
+    public async Task SendPasswordResetForEmailAsync(string email, CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        var user = await userManager.FindByEmailAsync(email.Trim());
+        if (user is null || !user.IsActive || !user.EmailConfirmed || string.IsNullOrWhiteSpace(user.Email))
+        {
+            return;
+        }
+
+        await SendPasswordResetAsync(user.Id, cancellationToken);
+    }
+
     private Uri BuildLink(string path, string query)
     {
         var builder = new UriBuilder(_baseUri) { Path = path, Query = query };
