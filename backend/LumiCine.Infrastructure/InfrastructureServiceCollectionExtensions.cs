@@ -32,6 +32,7 @@ public static class InfrastructureServiceCollectionExtensions
         services.AddScoped<IAccountPasswordResetService, AccountPasswordResetService>();
         services.AddScoped<IEmailConfirmationService, EmailConfirmationService>();
         services.AddEmailDelivery(configuration);
+        services.AddScoped<IAdminUserService, AdminUserService>();
 
         services.AddIdentityCore<ApplicationUser>(options =>
             {
