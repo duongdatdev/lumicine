@@ -11,7 +11,9 @@ namespace LumiCine.IntegrationTests;
 public sealed class ApiWebApplicationFactory(
     string environment = "Development",
     string? connectionString = null,
-    bool includeTestControllers = false) : WebApplicationFactory<Program>
+    bool includeTestControllers = false,
+    int authRateLimitPermitLimit = 10000,
+    int authRateLimitWindowSeconds = 60) : WebApplicationFactory<Program>
 {
     private static readonly string TestJwtPrivateKeyPem = CreateJwtTestPrivateKeyPem();
     internal static string JwtTestPrivateKeyPem => TestJwtPrivateKeyPem;
@@ -24,7 +26,9 @@ public sealed class ApiWebApplicationFactory(
         {
             ["Jwt:Issuer"] = "LumiCine",
             ["Jwt:Audience"] = "LumiCine.Web",
-            ["Jwt:PrivateKeyPem"] = TestJwtPrivateKeyPem
+            ["Jwt:PrivateKeyPem"] = TestJwtPrivateKeyPem,
+            ["AuthRateLimit:PermitLimit"] = authRateLimitPermitLimit.ToString(System.Globalization.CultureInfo.InvariantCulture),
+            ["AuthRateLimit:WindowSeconds"] = authRateLimitWindowSeconds.ToString(System.Globalization.CultureInfo.InvariantCulture)
         };
         if (connectionString is not null)
         {

@@ -3,6 +3,7 @@ using LumiCine.API.Authentication;
 using LumiCine.Application.Accounts;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 
 namespace LumiCine.API.Controllers;
 
@@ -13,6 +14,7 @@ public sealed class ForgotPasswordController(
     ILogger<ForgotPasswordController> logger) : ControllerBase
 {
     [HttpPost("forgot-password")]
+    [EnableRateLimiting("AuthPerIp")]
     [AllowAnonymous]
     [ServiceFilter(typeof(CsrfValidationFilter))]
     [ProducesResponseType(StatusCodes.Status202Accepted)]

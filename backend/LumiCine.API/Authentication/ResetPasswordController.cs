@@ -3,6 +3,7 @@ using LumiCine.API.Authentication;
 using LumiCine.Application.Accounts;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 
 namespace LumiCine.API.Controllers;
 
@@ -11,6 +12,7 @@ namespace LumiCine.API.Controllers;
 public sealed class ResetPasswordController(IAccountPasswordResetService passwordResetService) : ControllerBase
 {
     [HttpPost("reset-password")]
+    [EnableRateLimiting("AuthPerIp")]
     [AllowAnonymous]
     [ServiceFilter(typeof(CsrfValidationFilter))]
     [ProducesResponseType(StatusCodes.Status204NoContent)]

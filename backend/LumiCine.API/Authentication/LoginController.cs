@@ -3,6 +3,7 @@ using LumiCine.API.Authentication;
 using LumiCine.Application.Accounts;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 
 namespace LumiCine.API.Controllers;
 
@@ -16,6 +17,7 @@ public sealed class LoginController(
     private const string RefreshCookieName = "__Secure-LumiCine.Refresh";
 
     [HttpPost("login")]
+    [EnableRateLimiting("AuthPerIp")]
     [AllowAnonymous]
     [ServiceFilter(typeof(CsrfValidationFilter))]
     [ProducesResponseType(typeof(LoginResponse), StatusCodes.Status200OK)]
@@ -55,6 +57,7 @@ public sealed class LoginController(
     }
 
     [HttpPost("refresh")]
+    [EnableRateLimiting("AuthPerIp")]
     [AllowAnonymous]
     [ServiceFilter(typeof(CsrfValidationFilter))]
     [ProducesResponseType(typeof(LoginResponse), StatusCodes.Status200OK)]

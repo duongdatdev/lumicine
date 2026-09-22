@@ -4,6 +4,9 @@ using LumiCine.API;
 using LumiCine.Infrastructure;
 using LumiCine.Infrastructure.Identity;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
+using Microsoft.Extensions.Options;
+using System.Threading.RateLimiting;
 
 var seedAdmin = StartupCommandLine.ConsumeSeedAdminFlag(args, out var builderArgs);
 var builder = WebApplication.CreateBuilder(builderArgs);
@@ -42,6 +45,35 @@ builder.Services.AddAntiforgery(options =>
 });
 builder.Services.AddScoped<CsrfValidationFilter>();
 builder.Services.AddExceptionHandler<GlobalExceptionHandler>();
+builder.Services.AddOptions<AuthRateLimitOptions>()
+    .Bind(builder.Configuration.GetSection(AuthRateLimitOptions.SectionName))
+    .ValidateDataAnnotations()
+    .ValidateOnStart();
+builder.Services.AddRateLimiter(options =>
+{
+    options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+    options.OnRejected = async (context, cancellationToken) =>
+    {
+        var retryAfter = context.Lease.TryGetMetadata(MetadataName.RetryAfter, out var duration)
+            ? Math.Max(1, (int)Math.Ceiling(duration.TotalSeconds))
+            : context.HttpContext.RequestServices.GetRequiredService<IOptions<AuthRateLimitOptions>>().Value.WindowSeconds;
+        context.HttpContext.Response.Headers.RetryAfter = retryAfter.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        var problem = new ProblemDetails { Status = StatusCodes.Status429TooManyRequests, Title = "Too many requests", Type = "about:blank" };
+        problem.Extensions["traceId"] = context.HttpContext.TraceIdentifier;
+        await context.HttpContext.Response.WriteAsJsonAsync(problem, typeof(ProblemDetails), options: null, contentType: "application/problem+json", cancellationToken);
+    };
+});
+builder.Services.AddOptions<RateLimiterOptions>().Configure<IOptions<AuthRateLimitOptions>>((options, rateLimitOptions) =>
+    options.AddPolicy("AuthPerIp", httpContext =>
+        RateLimitPartition.GetFixedWindowLimiter(
+            httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+            _ => new FixedWindowRateLimiterOptions
+            {
+                PermitLimit = rateLimitOptions.Value.PermitLimit,
+                Window = TimeSpan.FromSeconds(rateLimitOptions.Value.WindowSeconds),
+                QueueLimit = 0,
+                AutoReplenishment = true
+            })));
 builder.Services.AddOpenApi();
 builder.Services.AddInfrastructure(builder.Configuration);
 if (!seedAdmin)
@@ -65,6 +97,8 @@ if (seedAdmin)
 
 var app = builder.Build();
 app.UseExceptionHandler();
+app.UseRouting();
+app.UseRateLimiter();
 app.UseAuthentication();
 app.UseAuthorization();
 app.MapControllers();

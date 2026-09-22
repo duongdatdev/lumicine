@@ -3,6 +3,7 @@ using LumiCine.API.Authentication;
 using LumiCine.Application.Accounts;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 
 namespace LumiCine.API.Controllers;
 
@@ -27,6 +28,7 @@ public sealed class EmailConfirmationController(
     }
 
     [HttpPost("resend-confirmation")]
+    [EnableRateLimiting("AuthPerIp")]
     [AllowAnonymous]
     [ServiceFilter(typeof(CsrfValidationFilter))]
     [ProducesResponseType(StatusCodes.Status202Accepted)]

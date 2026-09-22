@@ -3,6 +3,7 @@ using LumiCine.API.Authentication;
 using LumiCine.Application.Accounts;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 
 namespace LumiCine.API.Controllers;
 
@@ -14,6 +15,7 @@ public sealed class RegistrationController(
     ILogger<RegistrationController> logger) : ControllerBase
 {
     [HttpPost("register")]
+    [EnableRateLimiting("AuthPerIp")]
     [AllowAnonymous]
     [ServiceFilter(typeof(CsrfValidationFilter))]
     [ProducesResponseType(typeof(RegisterResponse), StatusCodes.Status201Created)]
