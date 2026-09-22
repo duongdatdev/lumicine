@@ -33,6 +33,7 @@ public static class InfrastructureServiceCollectionExtensions
         services.AddScoped<IEmailConfirmationService, EmailConfirmationService>();
         services.AddEmailDelivery(configuration);
         services.AddScoped<IAdminUserService, AdminUserService>();
+        services.AddScoped<AdminBootstrapper>();
 
         services.AddIdentityCore<ApplicationUser>(options =>
             {

@@ -1,9 +1,12 @@
 using LumiCine.API.Exceptions;
 using LumiCine.API.Authentication;
+using LumiCine.API;
 using LumiCine.Infrastructure;
+using LumiCine.Infrastructure.Identity;
 using Microsoft.AspNetCore.Mvc;
 
-var builder = WebApplication.CreateBuilder(args);
+var seedAdmin = StartupCommandLine.ConsumeSeedAdminFlag(args, out var builderArgs);
+var builder = WebApplication.CreateBuilder(builderArgs);
 builder.Logging.AddJsonConsole(options =>
 {
     options.IncludeScopes = true;
@@ -41,7 +44,24 @@ builder.Services.AddScoped<CsrfValidationFilter>();
 builder.Services.AddExceptionHandler<GlobalExceptionHandler>();
 builder.Services.AddOpenApi();
 builder.Services.AddInfrastructure(builder.Configuration);
-builder.Services.AddJwtAuthentication();
+if (!seedAdmin)
+{
+    builder.Services.AddJwtAuthentication();
+}
+else
+{
+    builder.Services.AddAuthentication();
+}
+
+if (seedAdmin)
+{
+    using var bootstrapApp = builder.Build();
+    using var scope = bootstrapApp.Services.CreateScope();
+    var created = await scope.ServiceProvider.GetRequiredService<AdminBootstrapper>()
+        .SeedAsync(builder.Configuration);
+    Console.WriteLine(created ? "Bootstrap admin created." : "Bootstrap admin already exists.");
+    return;
+}
 
 var app = builder.Build();
 app.UseExceptionHandler();
