@@ -148,4 +148,78 @@ internal sealed class AdminUserService(
             return AdminUserStatusResult.Conflict;
         }
     }
+
+    public async Task<AdminUserStatusResult> SetRoleAsync(
+        Guid id,
+        string role,
+        CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        if (role is not RoleNames.Customer and not RoleNames.Staff)
+        {
+            return AdminUserStatusResult.InvalidRole;
+        }
+
+        await using var transaction = await dbContext.Database.BeginTransactionAsync(cancellationToken);
+        try
+        {
+            var user = await dbContext.Users
+                .FromSqlInterpolated($"SELECT * FROM \"Users\" WHERE \"Id\" = {id} FOR UPDATE")
+                .SingleOrDefaultAsync(cancellationToken);
+            cancellationToken.ThrowIfCancellationRequested();
+            if (user is null)
+            {
+                await transaction.RollbackAsync(CancellationToken.None);
+                return AdminUserStatusResult.NotFound;
+            }
+
+            var isAdmin = await userManager.IsInRoleAsync(user, RoleNames.Admin);
+            cancellationToken.ThrowIfCancellationRequested();
+            if (isAdmin)
+            {
+                await transaction.RollbackAsync(CancellationToken.None);
+                return AdminUserStatusResult.ProtectedAdmin;
+            }
+
+            var currentRoles = await userManager.GetRolesAsync(user);
+            cancellationToken.ThrowIfCancellationRequested();
+            if (currentRoles.Count == 1 && string.Equals(currentRoles[0], role, StringComparison.Ordinal))
+            {
+                await transaction.CommitAsync(cancellationToken);
+                return AdminUserStatusResult.Success;
+            }
+
+            if (currentRoles.Count > 0)
+            {
+                var removeResult = await userManager.RemoveFromRolesAsync(user, currentRoles);
+                cancellationToken.ThrowIfCancellationRequested();
+                if (!removeResult.Succeeded)
+                {
+                    await transaction.RollbackAsync(CancellationToken.None);
+                    return AdminUserStatusResult.Conflict;
+                }
+            }
+
+            var addResult = await userManager.AddToRoleAsync(user, role);
+            cancellationToken.ThrowIfCancellationRequested();
+            if (!addResult.Succeeded)
+            {
+                await transaction.RollbackAsync(CancellationToken.None);
+                return AdminUserStatusResult.Conflict;
+            }
+
+            var revokedAtUtc = timeProvider.GetUtcNow().UtcDateTime;
+            await dbContext.AuthSessions
+                .Where(session => session.UserId == user.Id && session.RevokedAtUtc == null)
+                .ExecuteUpdateAsync(update => update.SetProperty(session => session.RevokedAtUtc, revokedAtUtc), cancellationToken);
+
+            await transaction.CommitAsync(cancellationToken);
+            return AdminUserStatusResult.Success;
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            await transaction.RollbackAsync(CancellationToken.None);
+            return AdminUserStatusResult.Conflict;
+        }
+    }
 }

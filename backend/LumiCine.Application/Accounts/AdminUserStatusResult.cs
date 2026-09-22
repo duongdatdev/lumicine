@@ -5,5 +5,6 @@ public enum AdminUserStatusResult
     Success,
     NotFound,
     ProtectedAdmin,
-    Conflict
+    Conflict,
+    InvalidRole
 }

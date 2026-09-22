@@ -44,9 +44,35 @@ public sealed class AdminUsersController(IAdminUserService adminUserService) : C
         };
     }
 
+    [HttpPut("{id:guid}/role")]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status409Conflict)]
+    public async Task<IActionResult> SetRole(Guid id, [FromBody] SetAdminUserRoleRequest request, CancellationToken cancellationToken)
+    {
+        var result = await adminUserService.SetRoleAsync(id, request.Role!, cancellationToken);
+        return result switch
+        {
+            AdminUserStatusResult.Success => NoContent(),
+            AdminUserStatusResult.InvalidRole => Problem(statusCode: StatusCodes.Status400BadRequest, title: "Bad Request"),
+            AdminUserStatusResult.NotFound => Problem(statusCode: StatusCodes.Status404NotFound, title: "Not Found"),
+            AdminUserStatusResult.ProtectedAdmin or AdminUserStatusResult.Conflict =>
+                Problem(statusCode: StatusCodes.Status409Conflict, title: "Conflict"),
+            _ => throw new InvalidOperationException("Unknown admin user role result.")
+        };
+    }
+
     public sealed record SetAdminUserStatusRequest
     {
         [Required]
         public bool? IsActive { get; init; }
+    }
+
+    public sealed record SetAdminUserRoleRequest
+    {
+        [Required]
+        [RegularExpression("^(Customer|Staff)$")]
+        public string? Role { get; init; }
     }
 }
