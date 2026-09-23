@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Diagnostics;
 using Microsoft.AspNetCore.Mvc;
+using LumiCine.Application.Common;
 
 namespace LumiCine.API.Exceptions;
 
@@ -13,11 +14,17 @@ public sealed class GlobalExceptionHandler(
         CancellationToken cancellationToken)
     {
         var traceId = httpContext.TraceIdentifier;
-        logger.LogError(exception, "Unhandled request exception. TraceId: {TraceId}", traceId);
+        if (exception is ApiException)
+            logger.LogInformation("Request rejected with status {StatusCode}. TraceId: {TraceId}", ((ApiException)exception).StatusCode, traceId);
+        else
+            logger.LogError(exception, "Unhandled request exception. TraceId: {TraceId}", traceId);
 
-        var statusCode = exception is BadHttpRequestException badRequest
-            ? badRequest.StatusCode
-            : StatusCodes.Status500InternalServerError;
+        var statusCode = exception switch
+        {
+            BadHttpRequestException badRequest => badRequest.StatusCode,
+            ApiException apiException => apiException.StatusCode,
+            _ => StatusCodes.Status500InternalServerError
+        };
         httpContext.Response.StatusCode = statusCode;
         var problem = new ProblemDetails
         {
@@ -25,6 +32,7 @@ public sealed class GlobalExceptionHandler(
             Title = statusCode == StatusCodes.Status500InternalServerError
                 ? "An unexpected error occurred."
                 : "The request could not be processed.",
+            Detail = exception is ApiException ? exception.Message : null,
             Instance = httpContext.Request.Path
         };
         problem.Extensions["traceId"] = traceId;

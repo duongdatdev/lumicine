@@ -3,6 +3,8 @@ using LumiCine.Infrastructure.Identity;
 using LumiCine.Infrastructure.Authentication;
 using LumiCine.Application.Accounts;
 using LumiCine.Infrastructure.Email;
+using LumiCine.Application.Catalog;
+using LumiCine.Infrastructure.Catalog;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
@@ -33,6 +35,7 @@ public static class InfrastructureServiceCollectionExtensions
         services.AddScoped<IEmailConfirmationService, EmailConfirmationService>();
         services.AddEmailDelivery(configuration);
         services.AddScoped<IAdminUserService, AdminUserService>();
+        services.AddScoped<IMovieCatalogService, MovieCatalogService>();
         services.AddScoped<AdminBootstrapper>();
 
         services.AddIdentityCore<ApplicationUser>(options =>
