@@ -74,7 +74,11 @@ builder.Services.AddOptions<RateLimiterOptions>().Configure<IOptions<AuthRateLim
                 QueueLimit = 0,
                 AutoReplenishment = true
             })));
-builder.Services.AddOpenApi();
+builder.Services.AddOpenApi(options =>
+{
+    options.AddDocumentTransformer<OpenApiAuthTransformer>();
+    options.AddOperationTransformer<OpenApiAuthTransformer>();
+});
 builder.Services.AddInfrastructure(builder.Configuration);
 if (!seedAdmin)
 {
