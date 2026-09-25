@@ -24,7 +24,10 @@ public sealed class MovieCatalogService(LumiCineDbContext db, TimeProvider timeP
         if (page.Offset > int.MaxValue) return new([], total, page.Page, page.PageSize);
         var movies = await query.OrderBy(m => m.Title).ThenBy(m => m.Id).Skip((int)page.Offset).Take(page.PageSize)
             .Select(m => new MovieSummary(m.Id, m.Title, m.OriginalTitle, m.Synopsis, m.DurationMinutes, m.ReleaseDate, m.AgeRating, m.PosterUrl, m.IsActive,
-                db.MovieGenres.Where(mg => mg.MovieId == m.Id).Join(db.Genres, mg => mg.GenreId, g => g.Id, (mg, g) => new GenreSummary(g.Id, g.Name, g.Slug)).OrderBy(g => g.Name).ToList()))
+                db.MovieGenres.Where(mg => mg.MovieId == m.Id)
+                    .Join(db.Genres, mg => mg.GenreId, g => g.Id, (mg, g) => g)
+                    .OrderBy(g => g.Name).ThenBy(g => g.Id)
+                    .Select(g => new GenreSummary(g.Id, g.Name, g.Slug)).ToList()))
             .ToListAsync(cancellationToken);
         return new(movies, total, page.Page, page.PageSize);
     }
@@ -132,7 +135,10 @@ public sealed class MovieCatalogService(LumiCineDbContext db, TimeProvider timeP
     private async Task<MovieSummary?> BrowseOne(Guid id, bool includeInactive, CancellationToken ct) =>
         await db.Movies.AsNoTracking().Where(m => m.Id == id && (includeInactive || m.IsActive))
             .Select(m => new MovieSummary(m.Id, m.Title, m.OriginalTitle, m.Synopsis, m.DurationMinutes, m.ReleaseDate, m.AgeRating, m.PosterUrl, m.IsActive,
-                db.MovieGenres.Where(mg => mg.MovieId == m.Id).Join(db.Genres, mg => mg.GenreId, g => g.Id, (mg, g) => new GenreSummary(g.Id, g.Name, g.Slug)).OrderBy(g => g.Name).ToList()))
+                db.MovieGenres.Where(mg => mg.MovieId == m.Id)
+                    .Join(db.Genres, mg => mg.GenreId, g => g.Id, (mg, g) => g)
+                    .OrderBy(g => g.Name).ThenBy(g => g.Id)
+                    .Select(g => new GenreSummary(g.Id, g.Name, g.Slug)).ToList()))
             .SingleOrDefaultAsync(ct);
 
     private async Task<Movie?> LockMovie(Guid id, CancellationToken ct)
