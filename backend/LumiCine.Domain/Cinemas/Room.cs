@@ -17,8 +17,8 @@ public sealed class Room
     {
         Id = EntityGuard.Id(id, nameof(id));
         CinemaId = EntityGuard.Id(cinemaId, nameof(cinemaId));
-        Code = EntityGuard.RequiredText(code, 30, nameof(code));
-        Name = EntityGuard.RequiredText(name, 100, nameof(name));
+        Code = EntityGuard.RequiredText(code.Trim().ToUpperInvariant(), 30, nameof(code));
+        Name = EntityGuard.RequiredText(name.Trim(), 100, nameof(name));
         CreatedAtUtc = EntityGuard.Utc(createdAtUtc, nameof(createdAtUtc));
         IsActive = isActive;
         UpdatedAtUtc = EntityGuard.OptionalUtc(updatedAtUtc, nameof(updatedAtUtc));
@@ -31,4 +31,17 @@ public sealed class Room
     public bool IsActive { get; private set; }
     public DateTime CreatedAtUtc { get; private set; }
     public DateTime? UpdatedAtUtc { get; private set; }
+
+    public void Update(string code, string name, DateTime updatedAtUtc)
+    {
+        Code = EntityGuard.RequiredText(code.Trim().ToUpperInvariant(), 30, nameof(code));
+        Name = EntityGuard.RequiredText(name.Trim(), 100, nameof(name));
+        UpdatedAtUtc = EntityGuard.Utc(updatedAtUtc, nameof(updatedAtUtc));
+    }
+
+    public void SetActive(bool isActive, DateTime updatedAtUtc)
+    {
+        IsActive = isActive;
+        UpdatedAtUtc = EntityGuard.Utc(updatedAtUtc, nameof(updatedAtUtc));
+    }
 }

@@ -17,10 +17,10 @@ public sealed class Cinema
         DateTime? updatedAtUtc = null)
     {
         Id = EntityGuard.Id(id, nameof(id));
-        Code = EntityGuard.RequiredText(code, 30, nameof(code));
-        Name = EntityGuard.RequiredText(name, 160, nameof(name));
-        Address = EntityGuard.RequiredText(address, 300, nameof(address));
-        City = EntityGuard.RequiredText(city, 100, nameof(city));
+        Code = EntityGuard.RequiredText(code.Trim().ToUpperInvariant(), 30, nameof(code));
+        Name = EntityGuard.RequiredText(name.Trim(), 160, nameof(name));
+        Address = EntityGuard.RequiredText(address.Trim(), 300, nameof(address));
+        City = EntityGuard.RequiredText(city.Trim(), 100, nameof(city));
         CreatedAtUtc = EntityGuard.Utc(createdAtUtc, nameof(createdAtUtc));
         IsActive = isActive;
         UpdatedAtUtc = EntityGuard.OptionalUtc(updatedAtUtc, nameof(updatedAtUtc));
@@ -34,4 +34,19 @@ public sealed class Cinema
     public bool IsActive { get; private set; }
     public DateTime CreatedAtUtc { get; private set; }
     public DateTime? UpdatedAtUtc { get; private set; }
+
+    public void Update(string code, string name, string address, string city, DateTime updatedAtUtc)
+    {
+        Code = EntityGuard.RequiredText(code.Trim().ToUpperInvariant(), 30, nameof(code));
+        Name = EntityGuard.RequiredText(name.Trim(), 160, nameof(name));
+        Address = EntityGuard.RequiredText(address.Trim(), 300, nameof(address));
+        City = EntityGuard.RequiredText(city.Trim(), 100, nameof(city));
+        UpdatedAtUtc = EntityGuard.Utc(updatedAtUtc, nameof(updatedAtUtc));
+    }
+
+    public void SetActive(bool isActive, DateTime updatedAtUtc)
+    {
+        IsActive = isActive;
+        UpdatedAtUtc = EntityGuard.Utc(updatedAtUtc, nameof(updatedAtUtc));
+    }
 }

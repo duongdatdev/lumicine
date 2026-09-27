@@ -32,4 +32,52 @@ public sealed class CinemaEntityTests
 
         Assert.Equal(1, seat.Number);
     }
+
+    [Fact]
+    public void Cinema_and_room_trim_fields_and_normalize_codes()
+    {
+        var cinema = new Cinema(Guid.NewGuid(), " c-01 ", "  Lumi  ", " Main St ", " HCMC ", DateTime.UtcNow);
+        var room = new Room(Guid.NewGuid(), cinema.Id, " r-02 ", " Room 2 ", DateTime.UtcNow);
+
+        Assert.Equal("C-01", cinema.Code);
+        Assert.Equal("Lumi", cinema.Name);
+        Assert.Equal("R-02", room.Code);
+        Assert.Equal("Room 2", room.Name);
+    }
+
+    [Theory]
+    [InlineData("standard", "Standard")]
+    [InlineData(" VIP ", "VIP")]
+    public void Seat_normalizes_supported_types_and_rows(string input, string expected)
+    {
+        var seat = new Seat(Guid.NewGuid(), Guid.NewGuid(), " a ", 1, input, DateTime.UtcNow);
+
+        Assert.Equal("A", seat.RowLabel);
+        Assert.Equal(expected, seat.SeatType);
+    }
+
+    [Fact]
+    public void Seat_rejects_unknown_types()
+    {
+        Assert.Throws<ArgumentException>(() => new Seat(Guid.NewGuid(), Guid.NewGuid(), "A", 1, "Recliner", DateTime.UtcNow));
+    }
+
+    [Fact]
+    public void Updates_change_metadata_and_activation_without_exposing_setters()
+    {
+        var now = DateTime.UtcNow;
+        var cinema = new Cinema(Guid.NewGuid(), "C1", "Old", "Address", "City", now);
+        var room = new Room(Guid.NewGuid(), cinema.Id, "R1", "Old room", now);
+
+        cinema.Update(" c2 ", " New ", " New address ", " HCMC ", now.AddMinutes(1));
+        room.Update(" r2 ", " New room ", now.AddMinutes(1));
+        cinema.SetActive(false, now.AddMinutes(2));
+        room.SetActive(false, now.AddMinutes(2));
+
+        Assert.Equal("C2", cinema.Code);
+        Assert.Equal("New", cinema.Name);
+        Assert.Equal("R2", room.Code);
+        Assert.False(cinema.IsActive);
+        Assert.False(room.IsActive);
+    }
 }

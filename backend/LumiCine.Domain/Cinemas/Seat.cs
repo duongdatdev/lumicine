@@ -17,9 +17,9 @@ public sealed class Seat
     {
         Id = EntityGuard.Id(id, nameof(id));
         RoomId = EntityGuard.Id(roomId, nameof(roomId));
-        RowLabel = EntityGuard.RequiredText(rowLabel, 10, nameof(rowLabel));
+        RowLabel = EntityGuard.RequiredText(rowLabel.Trim().ToUpperInvariant(), 10, nameof(rowLabel));
         Number = EntityGuard.Positive(number, nameof(number));
-        SeatType = EntityGuard.RequiredText(seatType, 30, nameof(seatType));
+        SeatType = NormalizeType(seatType);
         CreatedAtUtc = EntityGuard.Utc(createdAtUtc, nameof(createdAtUtc));
         IsActive = isActive;
     }
@@ -31,4 +31,17 @@ public sealed class Seat
     public string SeatType { get; private set; }
     public bool IsActive { get; private set; }
     public DateTime CreatedAtUtc { get; private set; }
+
+    public void SetActive(bool isActive) => IsActive = isActive;
+
+    private static string NormalizeType(string type)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(type);
+        return type.Trim().ToUpperInvariant() switch
+        {
+            "STANDARD" => "Standard",
+            "VIP" => "VIP",
+            _ => throw new ArgumentException("Seat type must be Standard or VIP.", nameof(type))
+        };
+    }
 }
