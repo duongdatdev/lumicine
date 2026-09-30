@@ -5,6 +5,8 @@ using LumiCine.Application.Accounts;
 using LumiCine.Infrastructure.Email;
 using LumiCine.Application.Catalog;
 using LumiCine.Infrastructure.Catalog;
+using LumiCine.Application.Cinemas;
+using LumiCine.Infrastructure.Cinemas;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
@@ -37,6 +39,7 @@ public static class InfrastructureServiceCollectionExtensions
         services.AddScoped<IAdminUserService, AdminUserService>();
         services.AddScoped<IMovieCatalogService, MovieCatalogService>();
         services.AddScoped<AdminBootstrapper>();
+        services.AddScoped<ICinemaService, CinemaService>();
 
         services.AddIdentityCore<ApplicationUser>(options =>
             {
