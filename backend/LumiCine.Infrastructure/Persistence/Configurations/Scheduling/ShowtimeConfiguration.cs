@@ -25,6 +25,8 @@ public sealed class ShowtimeConfiguration : IEntityTypeConfiguration<Showtime>
         builder.Property(x => x.CreatedAtUtc).HasColumnType("timestamp with time zone");
         builder.Property(x => x.UpdatedAtUtc).HasColumnType("timestamp with time zone");
         builder.HasAlternateKey(x => new { x.Id, x.RoomId });
+        builder.HasIndex(x => new { x.MovieId, x.StartAtUtc });
+        builder.HasIndex(x => new { x.StartAtUtc, x.Status });
         builder.HasOne<Movie>().WithMany().HasForeignKey(x => x.MovieId).OnDelete(DeleteBehavior.Restrict);
         builder.HasOne<Room>().WithMany().HasForeignKey(x => x.RoomId).OnDelete(DeleteBehavior.Restrict);
     }

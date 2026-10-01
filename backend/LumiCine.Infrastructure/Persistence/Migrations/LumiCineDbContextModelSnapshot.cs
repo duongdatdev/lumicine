@@ -428,9 +428,11 @@ namespace LumiCine.Infrastructure.Persistence.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("MovieId");
-
                     b.HasIndex("RoomId");
+
+                    b.HasIndex("MovieId", "StartAtUtc");
+
+                    b.HasIndex("StartAtUtc", "Status");
 
                     b.ToTable("Showtimes", null, t =>
                         {
