@@ -42,4 +42,23 @@ public sealed class Showtime
     public ShowtimeStatus Status { get; private set; }
     public DateTime CreatedAtUtc { get; private set; }
     public DateTime? UpdatedAtUtc { get; private set; }
+
+    public void Reschedule(DateTime startAtUtc, decimal basePrice, DateTime updatedAtUtc)
+    {
+        if (Status != ShowtimeStatus.Scheduled || startAtUtc <= DateTime.UtcNow)
+            throw new InvalidOperationException("Only upcoming scheduled showtimes can be rescheduled.");
+        var duration = EndAtUtc - StartAtUtc;
+        StartAtUtc = EntityGuard.Utc(startAtUtc, nameof(startAtUtc));
+        EndAtUtc = StartAtUtc.Add(duration);
+        BasePrice = EntityGuard.NonNegative(basePrice, nameof(basePrice));
+        UpdatedAtUtc = EntityGuard.Utc(updatedAtUtc, nameof(updatedAtUtc));
+    }
+
+    public void Cancel(DateTime updatedAtUtc)
+    {
+        if (Status != ShowtimeStatus.Scheduled || StartAtUtc <= DateTime.UtcNow)
+            throw new InvalidOperationException("Only upcoming scheduled showtimes can be cancelled.");
+        Status = ShowtimeStatus.Cancelled;
+        UpdatedAtUtc = EntityGuard.Utc(updatedAtUtc, nameof(updatedAtUtc));
+    }
 }

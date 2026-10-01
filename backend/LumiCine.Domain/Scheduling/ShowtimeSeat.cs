@@ -31,4 +31,6 @@ public sealed class ShowtimeSeat
     public ShowtimeSeatStatus Status { get; private set; }
     public decimal Price { get; private set; }
     public DateTime CreatedAtUtc { get; private set; }
+
+    public void SetPrice(decimal price) => Price = EntityGuard.NonNegative(price, nameof(price));
 }
