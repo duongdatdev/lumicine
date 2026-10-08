@@ -9,6 +9,7 @@ coverage/
 *.log
 pgdata/
 postgres-data/
+**/uploads/
 
 # Local configuration and secrets
 **/appsettings.Local.json
