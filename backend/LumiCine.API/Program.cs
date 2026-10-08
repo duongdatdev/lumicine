@@ -3,13 +3,18 @@ using LumiCine.API.Authentication;
 using LumiCine.API;
 using LumiCine.Infrastructure;
 using LumiCine.Infrastructure.Identity;
+using LumiCine.Infrastructure.Seeding;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.Extensions.Options;
 using System.Threading.RateLimiting;
 
-var seedAdmin = StartupCommandLine.ConsumeSeedAdminFlag(args, out var builderArgs);
+var seedMode = StartupCommandLine.ConsumeSeedFlags(args, out var builderArgs);
 var builder = WebApplication.CreateBuilder(builderArgs);
+if (seedMode == SeedMode.Demo && !builder.Environment.IsDevelopment())
+{
+    throw new InvalidOperationException("--seed-demo is available only in the Development environment.");
+}
 builder.Logging.AddJsonConsole(options =>
 {
     options.IncludeScopes = true;
@@ -80,7 +85,7 @@ builder.Services.AddOpenApi(options =>
     options.AddOperationTransformer<OpenApiAuthTransformer>();
 });
 builder.Services.AddInfrastructure(builder.Configuration);
-if (!seedAdmin)
+if (seedMode == SeedMode.None)
 {
     builder.Services.AddJwtAuthentication();
 }
@@ -89,13 +94,20 @@ else
     builder.Services.AddAuthentication();
 }
 
-if (seedAdmin)
+if (seedMode != SeedMode.None)
 {
     using var bootstrapApp = builder.Build();
     using var scope = bootstrapApp.Services.CreateScope();
-    var created = await scope.ServiceProvider.GetRequiredService<AdminBootstrapper>()
-        .SeedAsync(builder.Configuration);
-    Console.WriteLine(created ? "Bootstrap admin created." : "Bootstrap admin already exists.");
+    if (seedMode == SeedMode.Admin)
+    {
+        var created = await scope.ServiceProvider.GetRequiredService<AdminBootstrapper>().SeedAsync(builder.Configuration);
+        Console.WriteLine(created ? "Bootstrap admin created." : "Bootstrap admin already exists.");
+    }
+    else
+    {
+        await scope.ServiceProvider.GetRequiredService<DemoSeeder>().SeedAsync();
+        Console.WriteLine("Demo catalog and upcoming showtimes seeded.");
+    }
     return;
 }
 

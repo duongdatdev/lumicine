@@ -226,4 +226,14 @@ public sealed class StartupCommandLineTests
         Assert.False(enabled);
         Assert.Equal(["--urls", "http://localhost:5000"], builderArgs);
     }
+
+    [Fact]
+    public void Seed_demo_flag_is_consumed_and_seed_modes_cannot_be_combined()
+    {
+        var mode = StartupCommandLine.ConsumeSeedFlags(["--seed-demo", "--urls", "http://localhost:5000"], out var builderArgs);
+
+        Assert.Equal(SeedMode.Demo, mode);
+        Assert.Equal(["--urls", "http://localhost:5000"], builderArgs);
+        Assert.Throws<ArgumentException>(() => StartupCommandLine.ConsumeSeedFlags(["--seed-admin", "--seed-demo"], out _));
+    }
 }

@@ -2,15 +2,16 @@ using LumiCine.Infrastructure.Persistence;
 using LumiCine.Infrastructure.Identity;
 using LumiCine.Infrastructure.Authentication;
 using LumiCine.Application.Accounts;
+using LumiCine.Application.Scheduling;
 using LumiCine.Infrastructure.Email;
+using LumiCine.Infrastructure.Scheduling;
 using LumiCine.Application.Catalog;
 using LumiCine.Infrastructure.Catalog;
-using LumiCine.Application.Media;
-using LumiCine.Infrastructure.Media;
-using LumiCine.Application.Scheduling;
-using LumiCine.Infrastructure.Scheduling;
 using LumiCine.Application.Cinemas;
 using LumiCine.Infrastructure.Cinemas;
+using LumiCine.Infrastructure.Seeding;
+using LumiCine.Application.Media;
+using LumiCine.Infrastructure.Media;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
@@ -43,9 +44,10 @@ public static class InfrastructureServiceCollectionExtensions
         services.AddScoped<IAdminUserService, AdminUserService>();
         services.AddScoped<IMovieCatalogService, MovieCatalogService>();
         services.AddScoped<AdminBootstrapper>();
-        services.AddScoped<IPosterService, LocalPosterService>();
         services.AddScoped<IShowtimeService, ShowtimeService>();
         services.AddScoped<ICinemaService, CinemaService>();
+        services.AddScoped<DemoSeeder>();
+        services.AddScoped<IPosterService, LocalPosterService>();
 
         services.AddIdentityCore<ApplicationUser>(options =>
             {
