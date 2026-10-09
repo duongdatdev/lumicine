@@ -19,7 +19,7 @@ public sealed class DemoSeeder(IServiceScopeFactory scopeFactory, TimeProvider t
     public async Task SeedAsync(CancellationToken cancellationToken = default)
     {
         await SeedCatalogAndCinemasAsync(cancellationToken);
-
+        await SeedShowtimesAsync(cancellationToken);
     }
 
     private async Task SeedCatalogAndCinemasAsync(CancellationToken ct)
@@ -97,6 +97,44 @@ public sealed class DemoSeeder(IServiceScopeFactory scopeFactory, TimeProvider t
         }
 
         await db.SaveChangesAsync(ct);
+    }
+
+    private async Task SeedShowtimesAsync(CancellationToken ct)
+    {
+        var localToday = DateOnly.FromDateTime(timeProvider.GetUtcNow().UtcDateTime.AddHours(7));
+        var times = new[] { new TimeOnly(14, 0), new TimeOnly(17, 0), new TimeOnly(20, 0) };
+        var roomKeys = new[]
+        {
+            "cinema-riverlight-room-1", "cinema-riverlight-room-2",
+            "cinema-cloudline-room-1", "cinema-cloudline-room-2"
+        };
+        var movieKeys = new[] { "movie-glass-horizon", "movie-last-orbit", "movie-summer-static" };
+        for (var dayOffset = 1; dayOffset <= 2; dayOffset++)
+        for (var roomIndex = 0; roomIndex < roomKeys.Length; roomIndex++)
+        for (var slotIndex = 0; slotIndex < times.Length; slotIndex++)
+        {
+            var date = localToday.AddDays(dayOffset);
+            var localStart = date.ToDateTime(times[slotIndex], DateTimeKind.Unspecified);
+            var offsetStart = new DateTimeOffset(localStart, TimeSpan.FromHours(7));
+            var roomKey = roomKeys[roomIndex];
+            var key = $"showtime-{roomKey}-{date:yyyyMMdd}-{times[slotIndex]:HHmm}";
+            var id = Id(key);
+            await using var scope = scopeFactory.CreateAsyncScope();
+            var db = scope.ServiceProvider.GetRequiredService<LumiCineDbContext>();
+            if (await db.Showtimes.AnyAsync(x => x.Id == id, ct)) continue;
+            var service = scope.ServiceProvider.GetRequiredService<IShowtimeService>();
+            try
+            {
+                await service.CreateWithIdAsync(id, new ShowtimeRequest(
+                    Id(movieKeys[(dayOffset + roomIndex + slotIndex - 1) % movieKeys.Length]),
+                    Id(roomKey),
+                    offsetStart.ToString("O", CultureInfo.InvariantCulture), 120_000m), ct);
+            }
+            catch (ApiException exception) when (exception.StatusCode == 409)
+            {
+                logger.LogWarning("Skipped demo showtime {ShowtimeId} because its room is unavailable: {Reason}", id, exception.Message);
+            }
+        }
     }
 
     private static Guid Id(string name)
