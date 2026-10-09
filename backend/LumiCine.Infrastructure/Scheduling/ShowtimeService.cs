@@ -14,8 +14,6 @@ namespace LumiCine.Infrastructure.Scheduling;
 
 public sealed class ShowtimeService(LumiCineDbContext db, TimeProvider clock) : IShowtimeService
 {
-    private static readonly TimeSpan Cleanup = TimeSpan.FromMinutes(15);
-
     public Task<PagedResult<ShowtimeSummary>> GetPublicAsync(ShowtimeQuery query, CancellationToken ct) => ListAsync(query, false, ct);
     public Task<PagedResult<ShowtimeSummary>> GetManagementAsync(ShowtimeQuery query, CancellationToken ct) => ListAsync(query, true, ct);
 

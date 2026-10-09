@@ -32,4 +32,25 @@ public sealed class ShowtimeLifecycleTests
         Assert.Equal(start, showtime.StartAtUtc);
         Assert.Equal(start.AddHours(2), showtime.EndAtUtc);
     }
+
+    [Fact]
+    public void Lifecycle_guards_use_the_supplied_utc_clock()
+    {
+        var fixedNow = new DateTime(2030, 5, 1, 12, 0, 0, DateTimeKind.Utc);
+        var upcomingStart = fixedNow.AddHours(1);
+        var upcoming = new Showtime(Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), upcomingStart,
+            upcomingStart.AddHours(2), 100, fixedNow.AddDays(-1));
+        upcoming.Reschedule(fixedNow.AddHours(3), 120, fixedNow);
+        Assert.Equal(fixedNow.AddHours(3), upcoming.StartAtUtc);
+
+        var startedStart = fixedNow.AddMinutes(-1);
+        var started = new Showtime(Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), startedStart,
+            startedStart.AddHours(2), 100, fixedNow.AddDays(-1));
+        Assert.Throws<InvalidOperationException>(() => started.Reschedule(fixedNow.AddHours(1), 120, fixedNow));
+        Assert.Throws<InvalidOperationException>(() => started.Cancel(fixedNow));
+
+        var pastTarget = new Showtime(Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), upcomingStart,
+            upcomingStart.AddHours(2), 100, fixedNow.AddDays(-1));
+        Assert.Throws<InvalidOperationException>(() => pastTarget.Reschedule(fixedNow.AddMinutes(-1), 120, fixedNow));
+    }
 }

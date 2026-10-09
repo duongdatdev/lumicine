@@ -45,20 +45,29 @@ public sealed class Showtime
 
     public void Reschedule(DateTime startAtUtc, decimal basePrice, DateTime updatedAtUtc)
     {
-        if (Status != ShowtimeStatus.Scheduled || startAtUtc <= DateTime.UtcNow)
+        updatedAtUtc = EntityGuard.Utc(updatedAtUtc, nameof(updatedAtUtc));
+        startAtUtc = EntityGuard.Utc(startAtUtc, nameof(startAtUtc));
+        if (Status != ShowtimeStatus.Scheduled)
+            throw new InvalidOperationException("Only upcoming scheduled showtimes can be rescheduled.");
+        if (StartAtUtc <= updatedAtUtc || startAtUtc <= updatedAtUtc)
             throw new InvalidOperationException("Only upcoming scheduled showtimes can be rescheduled.");
         var duration = EndAtUtc - StartAtUtc;
-        StartAtUtc = EntityGuard.Utc(startAtUtc, nameof(startAtUtc));
-        EndAtUtc = StartAtUtc.Add(duration);
-        BasePrice = EntityGuard.NonNegative(basePrice, nameof(basePrice));
-        UpdatedAtUtc = EntityGuard.Utc(updatedAtUtc, nameof(updatedAtUtc));
+        var endAtUtc = startAtUtc.Add(duration);
+        var validatedPrice = EntityGuard.NonNegative(basePrice, nameof(basePrice));
+        StartAtUtc = startAtUtc;
+        EndAtUtc = endAtUtc;
+        BasePrice = validatedPrice;
+        UpdatedAtUtc = updatedAtUtc;
     }
 
     public void Cancel(DateTime updatedAtUtc)
     {
-        if (Status != ShowtimeStatus.Scheduled || StartAtUtc <= DateTime.UtcNow)
+        updatedAtUtc = EntityGuard.Utc(updatedAtUtc, nameof(updatedAtUtc));
+        if (Status != ShowtimeStatus.Scheduled)
+            throw new InvalidOperationException("Only upcoming scheduled showtimes can be cancelled.");
+        if (StartAtUtc <= updatedAtUtc)
             throw new InvalidOperationException("Only upcoming scheduled showtimes can be cancelled.");
         Status = ShowtimeStatus.Cancelled;
-        UpdatedAtUtc = EntityGuard.Utc(updatedAtUtc, nameof(updatedAtUtc));
+        UpdatedAtUtc = updatedAtUtc;
     }
 }
