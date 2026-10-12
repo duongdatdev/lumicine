@@ -1,4 +1,5 @@
 using LumiCine.Domain.Cinemas;
+using LumiCine.Domain.Bookings;
 using LumiCine.Domain.Scheduling;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
@@ -17,6 +18,7 @@ public sealed class ShowtimeSeatConfiguration : IEntityTypeConfiguration<Showtim
         builder.HasKey(x => x.Id);
         builder.Property(x => x.Id).ValueGeneratedNever();
         builder.Property(x => x.Status).HasConversion<string>().HasMaxLength(20).IsRequired();
+        builder.Property(x => x.CurrentBookingId);
         builder.Property(x => x.Price).HasColumnType("numeric(18,2)");
         builder.Property(x => x.CreatedAtUtc).HasColumnType("timestamp with time zone");
         builder.HasAlternateKey(x => new { x.Id, x.ShowtimeId });
@@ -27,6 +29,10 @@ public sealed class ShowtimeSeatConfiguration : IEntityTypeConfiguration<Showtim
         builder.HasOne<Seat>().WithMany()
             .HasForeignKey(x => new { x.SeatId, x.RoomId })
             .HasPrincipalKey(x => new { x.Id, x.RoomId })
+            .OnDelete(DeleteBehavior.Restrict);
+        builder.HasOne<Booking>().WithMany()
+            .HasForeignKey(x => new { x.CurrentBookingId, x.ShowtimeId })
+            .HasPrincipalKey(x => new { x.Id, x.ShowtimeId })
             .OnDelete(DeleteBehavior.Restrict);
         builder.HasIndex(x => new { x.ShowtimeId, x.SeatId }).IsUnique();
     }

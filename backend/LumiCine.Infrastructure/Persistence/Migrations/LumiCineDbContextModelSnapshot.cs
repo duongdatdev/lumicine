@@ -38,6 +38,9 @@ namespace LumiCine.Infrastructure.Persistence.Migrations
                     b.Property<DateTime?>("HoldExpiresAtUtc")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<Guid?>("RequestId")
+                        .HasColumnType("uuid");
+
                     b.Property<Guid>("ShowtimeId")
                         .HasColumnType("uuid");
 
@@ -62,11 +65,21 @@ namespace LumiCine.Infrastructure.Persistence.Migrations
 
                     b.HasIndex("ShowtimeId");
 
-                    b.HasIndex("UserId");
+                    b.HasIndex("UserId")
+                        .IsUnique()
+                        .HasFilter("\"Status\" = 'Pending' AND \"RequestId\" IS NOT NULL");
+
+                    b.HasIndex("Status", "HoldExpiresAtUtc");
+
+                    b.HasIndex("UserId", "RequestId")
+                        .IsUnique()
+                        .HasFilter("\"RequestId\" IS NOT NULL");
 
                     b.ToTable("Bookings", null, t =>
                         {
                             t.HasCheckConstraint("CK_Bookings_Code_NotBlank", "btrim(\"Code\") <> ''");
+
+                            t.HasCheckConstraint("CK_Bookings_RequestId_User", "\"RequestId\" IS NULL OR \"UserId\" IS NOT NULL");
 
                             t.HasCheckConstraint("CK_Bookings_Status", "\"Status\" IN ('Pending', 'Confirmed', 'Cancelled', 'Expired')");
 
@@ -452,6 +465,9 @@ namespace LumiCine.Infrastructure.Persistence.Migrations
                     b.Property<DateTime>("CreatedAtUtc")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<Guid?>("CurrentBookingId")
+                        .HasColumnType("uuid");
+
                     b.Property<decimal>("Price")
                         .HasColumnType("numeric(18,2)");
 
@@ -470,6 +486,8 @@ namespace LumiCine.Infrastructure.Persistence.Migrations
                         .HasColumnType("character varying(20)");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("CurrentBookingId", "ShowtimeId");
 
                     b.HasIndex("SeatId", "RoomId");
 
@@ -871,6 +889,12 @@ namespace LumiCine.Infrastructure.Persistence.Migrations
 
             modelBuilder.Entity("LumiCine.Domain.Scheduling.ShowtimeSeat", b =>
                 {
+                    b.HasOne("LumiCine.Domain.Bookings.Booking", null)
+                        .WithMany()
+                        .HasForeignKey("CurrentBookingId", "ShowtimeId")
+                        .HasPrincipalKey("Id", "ShowtimeId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
                     b.HasOne("LumiCine.Domain.Cinemas.Seat", null)
                         .WithMany()
                         .HasForeignKey("SeatId", "RoomId")

@@ -15,10 +15,12 @@ public sealed class BookingConfiguration : IEntityTypeConfiguration<Booking>
             table.HasCheckConstraint("CK_Bookings_Code_NotBlank", "btrim(\"Code\") <> ''");
             table.HasCheckConstraint("CK_Bookings_TotalAmount", "\"TotalAmount\" >= 0");
             table.HasCheckConstraint("CK_Bookings_Status", "\"Status\" IN ('Pending', 'Confirmed', 'Cancelled', 'Expired')");
+            table.HasCheckConstraint("CK_Bookings_RequestId_User", "\"RequestId\" IS NULL OR \"UserId\" IS NOT NULL");
         });
         builder.HasKey(x => x.Id);
         builder.Property(x => x.Id).ValueGeneratedNever();
         builder.Property(x => x.Code).HasMaxLength(40).IsRequired();
+        builder.Property(x => x.RequestId);
         builder.Property(x => x.Status).HasConversion<string>().HasMaxLength(20).IsRequired();
         builder.Property(x => x.HoldExpiresAtUtc).HasColumnType("timestamp with time zone");
         builder.Property(x => x.TotalAmount).HasColumnType("numeric(18,2)");
@@ -28,5 +30,10 @@ public sealed class BookingConfiguration : IEntityTypeConfiguration<Booking>
         builder.HasOne<Showtime>().WithMany().HasForeignKey(x => x.ShowtimeId).OnDelete(DeleteBehavior.Restrict);
         builder.HasOne<ApplicationUser>().WithMany().HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.Restrict);
         builder.HasIndex(x => x.Code).IsUnique();
+        builder.HasIndex(x => new { x.UserId, x.RequestId }).IsUnique()
+            .HasFilter("\"RequestId\" IS NOT NULL");
+        builder.HasIndex(x => x.UserId).IsUnique()
+            .HasFilter("\"Status\" = 'Pending' AND \"RequestId\" IS NOT NULL");
+        builder.HasIndex(x => new { x.Status, x.HoldExpiresAtUtc });
     }
 }
