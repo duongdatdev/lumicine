@@ -28,9 +28,29 @@ public sealed class ShowtimeSeat
     public Guid ShowtimeId { get; private set; }
     public Guid RoomId { get; private set; }
     public Guid SeatId { get; private set; }
+    public Guid? CurrentBookingId { get; private set; }
     public ShowtimeSeatStatus Status { get; private set; }
     public decimal Price { get; private set; }
     public DateTime CreatedAtUtc { get; private set; }
 
     public void SetPrice(decimal price) => Price = EntityGuard.NonNegative(price, nameof(price));
+
+    public void Hold(Guid bookingId)
+    {
+        if (Status != ShowtimeSeatStatus.Available)
+            throw new InvalidOperationException("Only available seats can be held.");
+
+        CurrentBookingId = EntityGuard.Id(bookingId, nameof(bookingId));
+        Status = ShowtimeSeatStatus.Held;
+    }
+
+    public bool Release(Guid bookingId)
+    {
+        if (Status != ShowtimeSeatStatus.Held || CurrentBookingId != bookingId)
+            return false;
+
+        CurrentBookingId = null;
+        Status = ShowtimeSeatStatus.Available;
+        return true;
+    }
 }
