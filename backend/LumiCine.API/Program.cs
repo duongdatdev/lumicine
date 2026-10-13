@@ -1,7 +1,10 @@
 using LumiCine.API.Exceptions;
 using LumiCine.API.Authentication;
+using LumiCine.API.Realtime;
 using LumiCine.API;
+using LumiCine.Application.Scheduling;
 using LumiCine.Infrastructure;
+using LumiCine.Infrastructure.Bookings;
 using LumiCine.Infrastructure.Identity;
 using LumiCine.Infrastructure.Seeding;
 using Microsoft.AspNetCore.Mvc;
@@ -88,6 +91,10 @@ builder.Services.AddInfrastructure(builder.Configuration);
 if (seedMode == SeedMode.None)
 {
     builder.Services.AddJwtAuthentication();
+    builder.Services.AddSignalR();
+    builder.Services.AddSingleton<IShowtimeAvailabilityNotifier, SignalRShowtimeAvailabilityNotifier>();
+    if (!string.IsNullOrWhiteSpace(builder.Configuration.GetConnectionString("LumiCine")))
+        builder.Services.AddHostedService<BookingExpirationWorker>();
 }
 else
 {
@@ -118,6 +125,7 @@ app.UseRateLimiter();
 app.UseAuthentication();
 app.UseAuthorization();
 app.MapControllers();
+app.MapHub<ShowtimeHub>("/hubs/showtimes");
 
 if (app.Environment.IsDevelopment())
 {
