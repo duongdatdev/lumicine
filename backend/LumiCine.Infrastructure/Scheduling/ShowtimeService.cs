@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Text.RegularExpressions;
+using LumiCine.Domain.Bookings;
 using LumiCine.Application.Common;
 using LumiCine.Application.Scheduling;
 using LumiCine.Domain.Catalog;
@@ -12,7 +13,10 @@ using Npgsql;
 
 namespace LumiCine.Infrastructure.Scheduling;
 
-public sealed class ShowtimeService(LumiCineDbContext db, TimeProvider clock) : IShowtimeService
+public sealed class ShowtimeService(
+    LumiCineDbContext db,
+    TimeProvider clock,
+    IShowtimeAvailabilityNotifier? notifier = null) : IShowtimeService
 {
     public Task<PagedResult<ShowtimeSummary>> GetPublicAsync(ShowtimeQuery query, CancellationToken ct) => ListAsync(query, false, ct);
     public Task<PagedResult<ShowtimeSummary>> GetManagementAsync(ShowtimeQuery query, CancellationToken ct) => ListAsync(query, true, ct);
@@ -80,12 +84,26 @@ public sealed class ShowtimeService(LumiCineDbContext db, TimeProvider clock) : 
                     .Join(db.Cinemas, x => x.r.CinemaId, x => x.Id, (x, c) => new { x, c })
                     .Join(db.Movies, x => x.x.x.MovieId, x => x.Id, (x, m) => x.x.r.IsActive && x.c.IsActive && m.IsActive).SingleAsync(ct)) return null;
         }
-        return await (from ss in db.ShowtimeSeats.AsNoTracking()
-                      join seat in db.Seats.AsNoTracking() on new { ss.SeatId, ss.RoomId } equals new { SeatId = seat.Id, seat.RoomId }
-                      where ss.ShowtimeId == id && (management || seat.IsActive)
-                      orderby seat.RowLabel, seat.Number
-                      select new ShowtimeSeatSummary(seat.Id, seat.RowLabel, seat.Number, seat.SeatType, ss.Status.ToString(), ss.Price))
+        var projectionNow = clock.GetUtcNow().UtcDateTime;
+        var rows = await (from ss in db.ShowtimeSeats.AsNoTracking()
+                          join seat in db.Seats.AsNoTracking() on new { ss.SeatId, ss.RoomId } equals new { SeatId = seat.Id, seat.RoomId }
+                          join booking in db.Bookings.AsNoTracking() on ss.CurrentBookingId equals booking.Id into bookings
+                          from booking in bookings.DefaultIfEmpty()
+                          where ss.ShowtimeId == id && (management || seat.IsActive)
+                          orderby seat.RowLabel, seat.Number
+                          select new { seat, ss, booking })
             .ToListAsync(ct);
+
+        return rows.Select(row =>
+        {
+            var status = row.ss.Status;
+            if (!management && status == ShowtimeSeatStatus.Held && row.booking is not null &&
+                (row.booking.Status == BookingStatus.Expired ||
+                 (row.booking.Status == BookingStatus.Pending && row.booking.HoldExpiresAtUtc <= projectionNow)))
+                status = ShowtimeSeatStatus.Available;
+            return new ShowtimeSeatSummary(row.seat.Id, row.seat.RowLabel, row.seat.Number,
+                row.seat.SeatType, status.ToString(), row.ss.Price);
+        }).ToList();
     }
 
     public async Task<ShowtimeSummary> CreateAsync(ShowtimeRequest request, CancellationToken ct)
@@ -125,6 +143,7 @@ public sealed class ShowtimeService(LumiCineDbContext db, TimeProvider clock) : 
             db.ShowtimeSeats.AddRange(seats.Select(seat => new ShowtimeSeat(Guid.NewGuid(), showtime.Id, room.Id, seat.Id, request.BasePrice, now)));
             await db.SaveChangesAsync(ct);
             await tx.CommitAsync(ct);
+            if (notifier is not null) await notifier.NotifyAsync(showtime.Id, ct);
             return await GetSummaryAsync(showtime.Id, true, ct) ?? throw new InvalidOperationException("Created showtime disappeared.");
         }
         catch (DbUpdateException ex) when (FindPostgres(ex)?.SqlState == PostgresErrorCodes.ExclusionViolation)
@@ -161,6 +180,7 @@ public sealed class ShowtimeService(LumiCineDbContext db, TimeProvider clock) : 
         foreach (var seat in await db.ShowtimeSeats.Where(x => x.ShowtimeId == id).ToListAsync(ct)) seat.SetPrice(request.BasePrice);
         try { await db.SaveChangesAsync(ct); await tx.CommitAsync(ct); }
         catch (DbUpdateException ex) when (FindPostgres(ex)?.SqlState == PostgresErrorCodes.ExclusionViolation) { throw new ApiException(409, "The room already has a showtime in that period."); }
+        if (notifier is not null) await notifier.NotifyAsync(id, ct);
         return await GetSummaryAsync(id, true, ct);
     }
 
@@ -183,6 +203,7 @@ public sealed class ShowtimeService(LumiCineDbContext db, TimeProvider clock) : 
         showtime.Cancel(clock.GetUtcNow().UtcDateTime);
         await db.SaveChangesAsync(ct);
         await tx.CommitAsync(ct);
+        if (notifier is not null) await notifier.NotifyAsync(id, ct);
         return true;
     }
 
