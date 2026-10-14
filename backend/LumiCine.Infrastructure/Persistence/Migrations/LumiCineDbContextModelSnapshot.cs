@@ -122,6 +122,106 @@ namespace LumiCine.Infrastructure.Persistence.Migrations
                         });
                 });
 
+            modelBuilder.Entity("LumiCine.Domain.Bookings.Payment", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid");
+
+                    b.Property<decimal>("Amount")
+                        .HasColumnType("numeric(18,2)");
+
+                    b.Property<Guid>("BookingId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime>("CreatedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Currency")
+                        .IsRequired()
+                        .HasMaxLength(10)
+                        .HasColumnType("character varying(10)");
+
+                    b.Property<DateTime>("ExpiresAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("MerchantReference")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<string>("PaymentUrl")
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)");
+
+                    b.Property<DateTime?>("ProcessedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("ProcessingStatus")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
+
+                    b.Property<Guid>("RequestId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("ResponseCode")
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
+
+                    b.Property<string>("TransactionStatus")
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)");
+
+                    b.Property<DateTime?>("UpdatedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("VnPayTransactionId")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("MerchantReference")
+                        .IsUnique();
+
+                    b.HasIndex("VnPayTransactionId")
+                        .IsUnique()
+                        .HasFilter("\"VnPayTransactionId\" IS NOT NULL");
+
+                    b.HasIndex("BookingId", "RequestId")
+                        .IsUnique();
+
+                    b.HasIndex("Status", "ExpiresAtUtc");
+
+                    b.HasIndex(new[] { "BookingId" }, "IX_Payments_BookingId_Fulfilled")
+                        .IsUnique()
+                        .HasFilter("\"ProcessingStatus\" = 'Fulfilled'");
+
+                    b.HasIndex(new[] { "BookingId" }, "IX_Payments_BookingId_Pending")
+                        .IsUnique()
+                        .HasFilter("\"Status\" = 'Pending'");
+
+                    b.ToTable("Payments", null, t =>
+                        {
+                            t.HasCheckConstraint("CK_Payments_Amount", "\"Amount\" >= 0");
+
+                            t.HasCheckConstraint("CK_Payments_Currency_NotBlank", "btrim(\"Currency\") <> ''");
+
+                            t.HasCheckConstraint("CK_Payments_ProcessingStatus", "\"ProcessingStatus\" IN ('None', 'Fulfilled', 'RequiresRefundReview', 'RefundRecorded')");
+
+                            t.HasCheckConstraint("CK_Payments_RefundRecorded_Requires_Success", "\"ProcessingStatus\" <> 'RefundRecorded' OR \"Status\" = 'Succeeded'");
+
+                            t.HasCheckConstraint("CK_Payments_Status", "\"Status\" IN ('Pending', 'Succeeded', 'Failed')");
+
+                            t.HasCheckConstraint("CK_Payments_Succeeded_Records_Use", "\"Status\" <> 'Succeeded' OR \"ProcessingStatus\" <> 'None'");
+                        });
+                });
+
             modelBuilder.Entity("LumiCine.Domain.Bookings.Ticket", b =>
                 {
                     b.Property<Guid>("Id")
@@ -162,6 +262,58 @@ namespace LumiCine.Infrastructure.Persistence.Migrations
                             t.HasCheckConstraint("CK_Tickets_Code_NotBlank", "btrim(\"Code\") <> ''");
 
                             t.HasCheckConstraint("CK_Tickets_Status", "\"Status\" IN ('Issued', 'Used', 'Voided')");
+                        });
+                });
+
+            modelBuilder.Entity("LumiCine.Domain.Bookings.TicketEmailDelivery", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid");
+
+                    b.Property<int>("AttemptCount")
+                        .HasColumnType("integer");
+
+                    b.Property<Guid>("BookingId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime>("CreatedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("LastError")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
+                    b.Property<DateTime?>("LeaseUntilUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime?>("NextAttemptAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime?>("SentAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
+
+                    b.Property<DateTime?>("UpdatedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("BookingId")
+                        .IsUnique()
+                        .HasFilter("\"Status\" = 'Pending'");
+
+                    b.HasIndex("Status", "NextAttemptAtUtc")
+                        .HasFilter("\"Status\" = 'Pending'");
+
+                    b.ToTable("TicketEmailDeliveries", null, t =>
+                        {
+                            t.HasCheckConstraint("CK_TicketEmailDeliveries_AttemptCount", "\"AttemptCount\" >= 0 AND \"AttemptCount\" <= 5");
+
+                            t.HasCheckConstraint("CK_TicketEmailDeliveries_Status", "\"Status\" IN ('Pending', 'Sent', 'Failed')");
                         });
                 });
 
@@ -830,11 +982,29 @@ namespace LumiCine.Infrastructure.Persistence.Migrations
                         .IsRequired();
                 });
 
+            modelBuilder.Entity("LumiCine.Domain.Bookings.Payment", b =>
+                {
+                    b.HasOne("LumiCine.Domain.Bookings.Booking", null)
+                        .WithMany()
+                        .HasForeignKey("BookingId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
             modelBuilder.Entity("LumiCine.Domain.Bookings.Ticket", b =>
                 {
                     b.HasOne("LumiCine.Domain.Bookings.BookingItem", null)
                         .WithMany()
                         .HasForeignKey("BookingItemId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("LumiCine.Domain.Bookings.TicketEmailDelivery", b =>
+                {
+                    b.HasOne("LumiCine.Domain.Bookings.Booking", null)
+                        .WithMany()
+                        .HasForeignKey("BookingId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
                 });
