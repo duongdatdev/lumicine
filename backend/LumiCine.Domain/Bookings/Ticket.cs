@@ -31,4 +31,14 @@ public sealed class Ticket
     public DateTime IssuedAtUtc { get; private set; }
     public DateTime? UsedAtUtc { get; private set; }
     public DateTime CreatedAtUtc { get; private set; }
+
+    public void MarkUsed(DateTime nowUtc)
+    {
+        nowUtc = EntityGuard.Utc(nowUtc, nameof(nowUtc));
+        if (Status != TicketStatus.Issued)
+            throw new InvalidOperationException("Only issued tickets can be used.");
+
+        Status = TicketStatus.Used;
+        UsedAtUtc = nowUtc;
+    }
 }

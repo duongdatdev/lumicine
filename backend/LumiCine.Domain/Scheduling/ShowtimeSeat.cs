@@ -44,6 +44,14 @@ public sealed class ShowtimeSeat
         Status = ShowtimeSeatStatus.Held;
     }
 
+    public void Sell(Guid bookingId)
+    {
+        if (Status != ShowtimeSeatStatus.Held || CurrentBookingId != bookingId)
+            throw new InvalidOperationException("Only seats held by the booking can be sold.");
+
+        Status = ShowtimeSeatStatus.Sold;
+    }
+
     public bool Release(Guid bookingId)
     {
         if (Status != ShowtimeSeatStatus.Held || CurrentBookingId != bookingId)

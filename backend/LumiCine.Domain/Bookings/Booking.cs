@@ -43,6 +43,18 @@ public sealed class Booking
     public DateTime CreatedAtUtc { get; private set; }
     public DateTime? UpdatedAtUtc { get; private set; }
 
+    public void Confirm(DateTime nowUtc)
+    {
+        nowUtc = EntityGuard.Utc(nowUtc, nameof(nowUtc));
+        if (Status != BookingStatus.Pending)
+            throw new InvalidOperationException("Only pending bookings can be confirmed.");
+        if (HoldExpiresAtUtc is DateTime expiry && nowUtc >= expiry)
+            throw new InvalidOperationException("Only bookings inside their hold window can be confirmed.");
+
+        Status = BookingStatus.Confirmed;
+        UpdatedAtUtc = nowUtc;
+    }
+
     public void Cancel(DateTime nowUtc)
     {
         nowUtc = EntityGuard.Utc(nowUtc, nameof(nowUtc));
