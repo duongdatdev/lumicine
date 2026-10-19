@@ -28,6 +28,6 @@ public sealed record PaymentView(
 
 public interface IPaymentService
 {
-    Task<BookingPaymentLink> CreateBookingPaymentAsync(Guid userId, Guid bookingId, CreateBookingPaymentRequest request, CancellationToken cancellationToken);
+    Task<BookingPaymentLink> CreateBookingPaymentAsync(Guid userId, Guid bookingId, CreateBookingPaymentRequest request, string clientIpAddress, CancellationToken cancellationToken);
     Task<PaymentView> GetOwnedAsync(Guid userId, Guid paymentId, CancellationToken cancellationToken);
 }

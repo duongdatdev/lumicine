@@ -4,6 +4,7 @@ using LumiCine.Infrastructure.Authentication;
 using LumiCine.Infrastructure.Payments;
 using LumiCine.Application.Accounts;
 using LumiCine.Application.Bookings;
+using LumiCine.Application.Payments;
 using LumiCine.Infrastructure.Bookings;
 using LumiCine.Application.Scheduling;
 using LumiCine.Infrastructure.Email;
@@ -53,6 +54,8 @@ public static class InfrastructureServiceCollectionExtensions
         services.AddScoped<AdminBootstrapper>();
         services.AddScoped<IShowtimeService, ShowtimeService>();
         services.AddScoped<IBookingService, BookingService>();
+        services.AddScoped<IPaymentService, PaymentService>();
+        services.AddScoped<IVnPayMessageService, VnPayMessageService>();
         services.AddScoped<ICinemaService, CinemaService>();
         services.AddScoped<DemoSeeder>();
         services.AddScoped<IPosterService, LocalPosterService>();

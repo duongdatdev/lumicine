@@ -1,7 +1,9 @@
 using System.IdentityModel.Tokens.Jwt;
+using System.Net;
 using System.Security.Claims;
 using LumiCine.Application.Bookings;
 using LumiCine.Application.Common;
+using LumiCine.Application.Payments;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
@@ -11,7 +13,7 @@ namespace LumiCine.API.Controllers;
 [Authorize]
 [ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)]
 [Route("api/bookings")]
-public sealed class BookingsController(IBookingService bookings) : ControllerBase
+public sealed class BookingsController(IBookingService bookings, IPaymentService payments) : ControllerBase
 {
     [HttpPost]
     [ProducesResponseType<BookingDetails>(StatusCodes.Status201Created)]
@@ -31,6 +33,12 @@ public sealed class BookingsController(IBookingService bookings) : ControllerBas
     public async Task<BookingDetails> Get(Guid id, CancellationToken cancellationToken) =>
         await bookings.GetAsync(UserId, id, cancellationToken) ?? throw new ApiException(404, "Booking not found.");
 
+    [HttpPost("{id:guid}/payments/vnpay")]
+    [ProducesResponseType<BookingPaymentLink>(StatusCodes.Status200OK)]
+    public Task<BookingPaymentLink> CreateVnPayPayment(Guid id, CreateBookingPaymentRequest request,
+        CancellationToken cancellationToken) =>
+        payments.CreateBookingPaymentAsync(UserId, id, request, ClientIpAddress, cancellationToken);
+
     [HttpPost("{id:guid}/cancel")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     public async Task<IActionResult> Cancel(Guid id, CancellationToken cancellationToken)
@@ -40,4 +48,17 @@ public sealed class BookingsController(IBookingService bookings) : ControllerBas
     }
 
     private Guid UserId => Guid.Parse(User.FindFirstValue(JwtRegisteredClaimNames.Sub)!);
+
+    private string ClientIpAddress
+    {
+        get
+        {
+            var remote = HttpContext.Connection.RemoteIpAddress;
+            if (remote is null || IPAddress.IsLoopback(remote))
+                return "127.0.0.1";
+            if (remote.IsIPv4MappedToIPv6)
+                remote = remote.MapToIPv4();
+            return remote.ToString();
+        }
+    }
 }

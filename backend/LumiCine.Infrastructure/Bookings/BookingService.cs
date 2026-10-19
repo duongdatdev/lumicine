@@ -267,14 +267,7 @@ public sealed class BookingService(
         }).ToArray();
     }
 
-    private async Task LockAsync(string table, Guid id, CancellationToken ct)
-    {
-        await using var command = db.Database.GetDbConnection().CreateCommand();
-        command.Transaction = db.Database.CurrentTransaction!.GetDbTransaction();
-        command.CommandText = $"SELECT 1 FROM \"{table}\" WHERE \"Id\" = @id FOR UPDATE";
-        var parameter = command.CreateParameter(); parameter.ParameterName = "id"; parameter.Value = id; command.Parameters.Add(parameter);
-        await command.ExecuteScalarAsync(ct);
-    }
+    private Task LockAsync(string table, Guid id, CancellationToken ct) => db.LockRowAsync(table, id, ct);
 
     private async Task NotifyAsync(IEnumerable<Guid> showtimeIds, CancellationToken ct)
     {

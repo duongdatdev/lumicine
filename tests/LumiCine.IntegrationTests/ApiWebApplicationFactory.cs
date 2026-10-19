@@ -27,6 +27,10 @@ public sealed class ApiWebApplicationFactory(
             ["Jwt:Issuer"] = "LumiCine",
             ["Jwt:Audience"] = "LumiCine.Web",
             ["Jwt:PrivateKeyPem"] = TestJwtPrivateKeyPem,
+            ["VnPay:TmnCode"] = "LUMITEST",
+            ["VnPay:HashSecret"] = "test-secret-value-0123456789",
+            ["VnPay:ReturnUrl"] = "https://lumicine.test/payments/vnpay/return",
+            ["VnPay:IpnUrl"] = "https://lumicine.test/payments/vnpay/ipn",
             ["AuthRateLimit:PermitLimit"] = authRateLimitPermitLimit.ToString(System.Globalization.CultureInfo.InvariantCulture),
             ["AuthRateLimit:WindowSeconds"] = authRateLimitWindowSeconds.ToString(System.Globalization.CultureInfo.InvariantCulture)
         };

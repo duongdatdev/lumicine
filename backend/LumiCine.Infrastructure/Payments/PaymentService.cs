@@ -1,0 +1,115 @@
+using LumiCine.Application.Common;
+using LumiCine.Application.Payments;
+using LumiCine.Domain.Bookings;
+using LumiCine.Domain.Scheduling;
+using LumiCine.Infrastructure.Persistence;
+using Microsoft.EntityFrameworkCore;
+using Npgsql;
+
+namespace LumiCine.Infrastructure.Payments;
+
+public sealed class PaymentService(
+    LumiCineDbContext db,
+    TimeProvider clock,
+    IVnPayMessageService messages) : IPaymentService
+{
+    public async Task<BookingPaymentLink> CreateBookingPaymentAsync(
+        Guid userId, Guid bookingId, CreateBookingPaymentRequest request, string clientIpAddress, CancellationToken ct)
+    {
+        ValidateInput(userId, bookingId, request, clientIpAddress);
+        await using var tx = await db.Database.BeginTransactionAsync(ct);
+        try
+        {
+            var hint = await db.Bookings.AsNoTracking().Where(x => x.Id == bookingId && x.UserId == userId)
+                .Select(x => new { x.ShowtimeId }).SingleOrDefaultAsync(ct);
+            if (hint is null)
+                throw new ApiException(404, "Booking was not found.");
+
+            // Lock the showtime first so a concurrent expiry or cancellation cannot interleave
+            // with the payment attempt on the same booking.
+            await db.LockRowAsync("Showtimes", hint.ShowtimeId, ct);
+            await db.LockRowAsync("Bookings", bookingId, ct);
+            var booking = await db.Bookings.SingleAsync(x => x.Id == bookingId && x.UserId == userId, ct);
+            var now = UtcNow;
+            if (booking.Status != BookingStatus.Pending)
+                throw new ApiException(409, "Only pending bookings can be paid for.");
+            if (booking.HoldExpiresAtUtc is not DateTime expiresAt)
+                throw new ApiException(409, "This booking has no hold deadline and cannot be paid for online.");
+            if (now >= expiresAt)
+                throw new ApiException(409, "The booking hold has expired.");
+            if (booking.TotalAmount <= 0)
+                throw new ApiException(400, "Only bookings with a positive total can be paid online.");
+
+            var seatRows = await (from item in db.BookingItems
+                                  join seat in db.ShowtimeSeats on item.ShowtimeSeatId equals seat.Id
+                                  where item.BookingId == bookingId
+                                  select new { seat.Status, seat.CurrentBookingId }).ToListAsync(ct);
+            if (seatRows.Count == 0 || seatRows.Any(x => x.Status != ShowtimeSeatStatus.Held || x.CurrentBookingId != bookingId))
+                throw new ApiException(409, "The booking no longer owns all of its seats.");
+
+            var pending = await db.Payments.SingleOrDefaultAsync(x => x.BookingId == bookingId && x.Status == PaymentStatus.Pending, ct);
+            if (pending is not null)
+            {
+                await tx.CommitAsync(ct);
+                return new BookingPaymentLink(bookingId, pending.Id, pending.RequestId, pending.PaymentUrl!, expiresAt);
+            }
+
+            var previous = await db.Payments.SingleOrDefaultAsync(x => x.BookingId == bookingId && x.RequestId == request.RequestId, ct);
+            if (previous is not null && previous.Status == PaymentStatus.Succeeded)
+                throw new ApiException(409, "This payment request already succeeded.");
+            if (await db.Payments.AnyAsync(x => x.BookingId == bookingId && x.Status == PaymentStatus.Succeeded, ct))
+                throw new ApiException(409, "A payment for this booking already succeeded.");
+
+            // The requestId is unique per booking, so a retry after a failed attempt gets a
+            // fresh identifier while the caller's requestId stays reserved for the replay check.
+            var paymentRequestId = previous is null ? request.RequestId : Guid.NewGuid();
+            var paymentId = Guid.NewGuid();
+            var merchantReference = $"{booking.Code}.{paymentId.ToString("N")[..12]}";
+            var payment = new Payment(paymentId, bookingId, paymentRequestId, merchantReference,
+                booking.TotalAmount, "VND", expiresAt, now);
+            var url = messages.BuildPaymentUrl(new VnPayPaymentRequest(
+                merchantReference, $"Ve xem phim {booking.Code}", booking.TotalAmount, now, expiresAt, clientIpAddress));
+            payment.SetPaymentUrl(url, now);
+            db.Payments.Add(payment);
+            await db.SaveChangesAsync(ct);
+            await tx.CommitAsync(ct);
+            return new BookingPaymentLink(bookingId, paymentId, paymentRequestId, url, expiresAt);
+        }
+        catch (DbUpdateException ex) when (FindPostgres(ex)?.SqlState == PostgresErrorCodes.UniqueViolation)
+        {
+            throw new ApiException(409, "The payment request conflicts with a concurrent payment.");
+        }
+    }
+
+    public async Task<PaymentView> GetOwnedAsync(Guid userId, Guid paymentId, CancellationToken ct)
+    {
+        var payment = await (from row in db.Payments.AsNoTracking()
+                             join booking in db.Bookings.AsNoTracking() on row.BookingId equals booking.Id
+                             where row.Id == paymentId && booking.UserId == userId
+                             select row).SingleOrDefaultAsync(ct);
+        return payment is null ? throw new ApiException(404, "Payment was not found.") : ToView(payment);
+    }
+
+    private static PaymentView ToView(Payment payment) => new(
+        payment.Id, payment.BookingId, payment.RequestId, payment.MerchantReference, payment.Amount,
+        payment.Currency, payment.Status.ToString(), payment.ProcessingStatus.ToString(), payment.PaymentUrl,
+        payment.CreatedAtUtc, payment.ExpiresAtUtc, payment.ProcessedAtUtc, payment.VnPayTransactionId,
+        payment.ResponseCode, payment.TransactionStatus);
+
+    private static void ValidateInput(Guid userId, Guid bookingId, CreateBookingPaymentRequest request, string clientIpAddress)
+    {
+        if (userId == Guid.Empty || bookingId == Guid.Empty || request is null || request.RequestId == Guid.Empty)
+            throw new ApiException(400, "Valid account, booking, and request identifiers are required.");
+        if (string.IsNullOrWhiteSpace(clientIpAddress))
+            throw new ApiException(400, "A client IP address is required.");
+    }
+
+    private DateTime UtcNow => clock.GetUtcNow().UtcDateTime;
+
+    private static PostgresException? FindPostgres(Exception ex)
+    {
+        for (Exception? current = ex; current is not null; current = current.InnerException)
+            if (current is PostgresException postgres) return postgres;
+        return null;
+    }
+}
