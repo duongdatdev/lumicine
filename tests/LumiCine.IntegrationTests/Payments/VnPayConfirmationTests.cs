@@ -1,9 +1,12 @@
 using LumiCine.Application.Payments;
+using LumiCine.Application.Scheduling;
 using LumiCine.Domain.Bookings;
 using LumiCine.Domain.Scheduling;
 using LumiCine.IntegrationTests.Persistence;
+using Microsoft.AspNetCore.TestHost;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace LumiCine.IntegrationTests.Payments;
 
@@ -110,8 +113,82 @@ public sealed class VnPayConfirmationTests(PostgresDatabaseFixture fixture)
         Assert.Equal(2, await db.ShowtimeSeats.CountAsync(x => x.ShowtimeId == booking.ShowtimeId && x.CurrentBookingId == booking.Id));
     }
 
+    [Fact]
+    public async Task Fulfillment_issues_one_ticket_per_seat_and_queues_the_confirmation_email()
+    {
+        var notifier = new RecordingNotifier();
+        using var baseFactory = new ApiWebApplicationFactory(connectionString: fixture.ConnectionString);
+        using var factory = WithNotifier(baseFactory, notifier);
+        var (payment, booking, seats) = await InsertPendingPaymentAsync();
+        var parameters = VnPayCallbacks.SignedCallbackParameters(payment);
+
+        var outcome = await ApplyCallbackAsync(factory, parameters);
+
+        Assert.Equal(VnPayResponseCodes.Success, outcome.RspCode);
+        Assert.Equal([booking.ShowtimeId], notifier.Showtimes);
+        await using var db = fixture.CreateDbContext();
+        var tickets = await (from ticket in db.Tickets
+                             join item in db.BookingItems on ticket.BookingItemId equals item.Id
+                             where item.BookingId == booking.Id
+                             select ticket).ToListAsync();
+        Assert.Equal(seats.Length, tickets.Count);
+        Assert.All(tickets, ticket => Assert.Matches("^[A-Za-z0-9_-]{43}$", ticket.Code));
+        Assert.Equal(tickets.Count, tickets.Select(x => x.Code).ToHashSet().Count);
+        Assert.All(tickets, ticket => Assert.Equal(TicketStatus.Issued, ticket.Status));
+        var delivery = await db.TicketEmailDeliveries.SingleAsync(x => x.BookingId == booking.Id);
+        Assert.Equal(TicketEmailDeliveryStatus.Pending, delivery.Status);
+    }
+
+    [Fact]
+    public async Task Notification_failure_after_payment_keeps_the_committed_result()
+    {
+        using var baseFactory = new ApiWebApplicationFactory(connectionString: fixture.ConnectionString);
+        using var factory = WithNotifier(baseFactory, new FailingNotifier());
+        var (payment, booking, _) = await InsertPendingPaymentAsync();
+        var parameters = VnPayCallbacks.SignedCallbackParameters(payment);
+
+        var outcome = await ApplyCallbackAsync(factory, parameters);
+
+        Assert.Equal(VnPayResponseCodes.Success, outcome.RspCode);
+        await using var db = fixture.CreateDbContext();
+        Assert.Equal(BookingStatus.Confirmed, (await db.Bookings.SingleAsync(x => x.Id == booking.Id)).Status);
+        Assert.Equal(1, await db.TicketEmailDeliveries.CountAsync(x => x.BookingId == booking.Id));
+    }
+
+    [Fact]
+    public async Task Email_queue_failure_rolls_back_the_whole_confirmation()
+    {
+        using var factory = new ApiWebApplicationFactory(connectionString: fixture.ConnectionString);
+        var (payment, booking, seats) = await InsertPendingPaymentAsync();
+        await using (var db = fixture.CreateDbContext())
+        {
+            // A pending delivery row already exists for the booking, so the confirmation insert
+            // violates its uniqueness and the entire transaction must roll back.
+            db.TicketEmailDeliveries.Add(new TicketEmailDelivery(Guid.NewGuid(), booking.Id, DateTime.UtcNow));
+            await db.SaveChangesAsync();
+        }
+        var parameters = VnPayCallbacks.SignedCallbackParameters(payment);
+
+        var exception = await Assert.ThrowsAsync<LumiCine.Application.Common.ApiException>(() => ApplyCallbackAsync(factory, parameters));
+
+        Assert.Equal(409, exception.StatusCode);
+        await using var verify = fixture.CreateDbContext();
+        Assert.Equal(BookingStatus.Pending, (await verify.Bookings.SingleAsync(x => x.Id == booking.Id)).Status);
+        Assert.All(await verify.ShowtimeSeats.Where(x => seats.Contains(x.Id)).ToListAsync(),
+            seat => Assert.Equal(ShowtimeSeatStatus.Held, seat.Status));
+        var storedPayment = await verify.Payments.SingleAsync(x => x.Id == payment.Id);
+        Assert.Equal(PaymentStatus.Pending, storedPayment.Status);
+        var itemIds = await verify.BookingItems.Where(x => x.BookingId == booking.Id).Select(x => x.Id).ToListAsync();
+        Assert.Equal(0, await verify.Tickets.CountAsync(x => itemIds.Contains(x.BookingItemId)));
+    }
+
+    private static Microsoft.AspNetCore.Mvc.Testing.WebApplicationFactory<Program> WithNotifier(
+        ApiWebApplicationFactory baseFactory, IShowtimeAvailabilityNotifier notifier) =>
+        baseFactory.WithWebHostBuilder(builder => builder.ConfigureTestServices(services =>
+            services.Replace(ServiceDescriptor.Singleton<IShowtimeAvailabilityNotifier>(notifier))));
+
     private async Task<VnPayCallbackOutcome> ApplyCallbackAsync(
-        ApiWebApplicationFactory factory, IReadOnlyDictionary<string, IReadOnlyList<string>> parameters)
+        Microsoft.AspNetCore.Mvc.Testing.WebApplicationFactory<Program> factory, IReadOnlyDictionary<string, IReadOnlyList<string>> parameters)
     {
         using var scope = factory.Services.CreateScope();
         var payments = scope.ServiceProvider.GetRequiredService<IPaymentService>();
@@ -144,5 +221,22 @@ public sealed class VnPayConfirmationTests(PostgresDatabaseFixture fixture)
         db.Payments.Add(payment);
         await db.SaveChangesAsync();
         return (payment, booking, seats);
+    }
+
+    internal sealed class RecordingNotifier : IShowtimeAvailabilityNotifier
+    {
+        public List<Guid> Showtimes { get; } = [];
+
+        public Task NotifyAsync(Guid showtimeId, CancellationToken cancellationToken)
+        {
+            Showtimes.Add(showtimeId);
+            return Task.CompletedTask;
+        }
+    }
+
+    internal sealed class FailingNotifier : IShowtimeAvailabilityNotifier
+    {
+        public Task NotifyAsync(Guid showtimeId, CancellationToken cancellationToken) =>
+            throw new InvalidOperationException("Injected notification failure.");
     }
 }

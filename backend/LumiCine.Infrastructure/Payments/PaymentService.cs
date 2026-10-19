@@ -1,9 +1,11 @@
 using LumiCine.Application.Common;
 using LumiCine.Application.Payments;
+using LumiCine.Application.Scheduling;
 using LumiCine.Domain.Bookings;
 using LumiCine.Domain.Scheduling;
 using LumiCine.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 using Npgsql;
 
 namespace LumiCine.Infrastructure.Payments;
@@ -11,7 +13,9 @@ namespace LumiCine.Infrastructure.Payments;
 public sealed class PaymentService(
     LumiCineDbContext db,
     TimeProvider clock,
-    IVnPayMessageService messages) : IPaymentService
+    IVnPayMessageService messages,
+    IShowtimeAvailabilityNotifier notifier,
+    ILogger<PaymentService> logger) : IPaymentService
 {
     public async Task<BookingPaymentLink> CreateBookingPaymentAsync(
         Guid userId, Guid bookingId, CreateBookingPaymentRequest request, string clientIpAddress, CancellationToken ct)
@@ -159,10 +163,10 @@ public sealed class PaymentService(
         var now = UtcNow;
         var seats = await db.ShowtimeSeats.Where(x => x.ShowtimeId == booking.ShowtimeId && x.CurrentBookingId == booking.Id)
             .ToListAsync(ct);
-        var itemCount = await db.BookingItems.CountAsync(x => x.BookingId == booking.Id, ct);
+        var items = await db.BookingItems.Where(x => x.BookingId == booking.Id).ToListAsync(ct);
         var canFulfill = booking.Status == BookingStatus.Pending &&
             booking.HoldExpiresAtUtc is DateTime expiry && now < expiry &&
-            itemCount > 0 && seats.Count == itemCount &&
+            items.Count > 0 && seats.Count == items.Count &&
             seats.All(x => x.Status == ShowtimeSeatStatus.Held);
 
         if (canFulfill)
@@ -170,6 +174,9 @@ public sealed class PaymentService(
             payment.MarkSucceeded(now, data.TransactionId, data.ResponseCode, data.TransactionStatus, PaymentProcessingStatus.Fulfilled);
             booking.Confirm(now);
             foreach (var seat in seats) seat.Sell(booking.Id);
+            foreach (var item in items)
+                db.Tickets.Add(new Ticket(Guid.NewGuid(), item.Id, TicketCode.New(), now, now));
+            db.TicketEmailDeliveries.Add(new TicketEmailDelivery(Guid.NewGuid(), booking.Id, now));
         }
         else
         {
@@ -179,7 +186,22 @@ public sealed class PaymentService(
         }
         await db.SaveChangesAsync(ct);
         await db.Database.CurrentTransaction!.CommitAsync(ct);
+        if (canFulfill)
+            await NotifySeatsAsync(booking.ShowtimeId, ct);
         return new VnPayCallbackOutcome(VnPayResponseCodes.Success, "Confirm Success.", ToView(payment));
+    }
+
+    private async Task NotifySeatsAsync(Guid showtimeId, CancellationToken ct)
+    {
+        try
+        {
+            await notifier.NotifyAsync(showtimeId, ct);
+        }
+        catch (Exception ex)
+        {
+            // Realtime availability is best effort; the payment result is already committed.
+            logger.LogWarning(ex, "Could not publish availability for showtime {ShowtimeId} after payment.", showtimeId);
+        }
     }
 
     private static PaymentView ToView(Payment payment) => new(
