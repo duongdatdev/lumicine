@@ -90,6 +90,57 @@ public sealed class PaymentService(
         return payment is null ? throw new ApiException(404, "Payment was not found.") : ToView(payment);
     }
 
+    public async Task<VnPayCallbackOutcome> ApplyVnPayCallbackAsync(
+        IReadOnlyDictionary<string, IReadOnlyList<string>> parameters, CancellationToken ct)
+    {
+        VnPayCallbackData data;
+        try
+        {
+            data = messages.ValidateCallback(parameters);
+        }
+        catch (VnPayCallbackException ex)
+        {
+            return new VnPayCallbackOutcome(ex.RspCode, ex.Message, null);
+        }
+
+        await using var tx = await db.Database.BeginTransactionAsync(ct);
+        try
+        {
+            var payment = await db.Payments.SingleOrDefaultAsync(x => x.MerchantReference == data.TransactionReference, ct);
+            if (payment is null)
+                return new VnPayCallbackOutcome(VnPayResponseCodes.TransactionNotFound, "Transaction not found.", null);
+            var view = ToView(payment);
+            if (data.AmountMinor != VnPayAmount.ToMinorUnits(payment.Amount))
+                return new VnPayCallbackOutcome(VnPayResponseCodes.InvalidAmount, "Invalid amount.", view);
+
+            return await ApplyResultAsync(payment, data, ct);
+        }
+        catch (DbUpdateException ex) when (FindPostgres(ex)?.SqlState == PostgresErrorCodes.UniqueViolation)
+        {
+            throw new ApiException(409, "The payment result conflicts with a concurrent change.");
+        }
+    }
+
+    private async Task<VnPayCallbackOutcome> ApplyResultAsync(Payment payment, VnPayCallbackData data, CancellationToken ct)
+    {
+        var succeeded = data.ResponseCode == VnPayResponseCodes.Success && data.TransactionStatus == VnPayResponseCodes.Success;
+        if (!succeeded)
+        {
+            // Failure callbacks arriving after a confirmed success never downgrade the payment.
+            if (payment.Status != PaymentStatus.Pending)
+                return new VnPayCallbackOutcome(VnPayResponseCodes.AlreadyProcessed, "Order already processed.", ToView(payment));
+
+            payment.MarkFailed(UtcNow, data.ResponseCode, data.TransactionStatus);
+            await db.SaveChangesAsync(ct);
+            await db.Database.CurrentTransaction!.CommitAsync(ct);
+            return new VnPayCallbackOutcome(VnPayResponseCodes.Success, "Confirm Success.", ToView(payment));
+        }
+
+        // Successful results are applied by the booking confirmation transaction.
+        await db.Database.CurrentTransaction!.RollbackAsync(ct);
+        return new VnPayCallbackOutcome(VnPayResponseCodes.UnknownError, "Successful results are not applied yet.", ToView(payment));
+    }
+
     private static PaymentView ToView(Payment payment) => new(
         payment.Id, payment.BookingId, payment.RequestId, payment.MerchantReference, payment.Amount,
         payment.Currency, payment.Status.ToString(), payment.ProcessingStatus.ToString(), payment.PaymentUrl,

@@ -14,7 +14,6 @@ public sealed class VnPayMessageService(IOptions<VnPayOptions> options) : IVnPay
     private const string Currency = "vnd";
     private const string Locale = "vn";
     private const string OrderType = "other";
-    private const long AmountMinorLimit = 999_999_999_999;
     private static readonly TimeZoneInfo VietnamTimeZone = TimeZoneInfo.CreateCustomTimeZone(
         "LumiCine-Vietnam", TimeSpan.FromHours(7), "Vietnam Standard Time", "Vietnam Standard Time");
 
@@ -130,13 +129,7 @@ public sealed class VnPayMessageService(IOptions<VnPayOptions> options) : IVnPay
             : throw InvalidSignature($"The callback field {key} is malformed.");
     }
 
-    private static long ToMinorUnits(decimal amount)
-    {
-        var minor = amount * 100;
-        if (minor < 1 || minor > AmountMinorLimit || minor != decimal.Truncate(minor))
-            throw new ApiException(400, "The booking total is outside the amount range VNPay accepts.");
-        return (long)minor;
-    }
+    private static long ToMinorUnits(decimal amount) => VnPayAmount.ToMinorUnits(amount);
 
     private void EnsureConfigured()
     {
