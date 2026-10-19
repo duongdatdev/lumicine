@@ -136,9 +136,50 @@ public sealed class PaymentService(
             return new VnPayCallbackOutcome(VnPayResponseCodes.Success, "Confirm Success.", ToView(payment));
         }
 
-        // Successful results are applied by the booking confirmation transaction.
-        await db.Database.CurrentTransaction!.RollbackAsync(ct);
-        return new VnPayCallbackOutcome(VnPayResponseCodes.UnknownError, "Successful results are not applied yet.", ToView(payment));
+        return await ApplySuccessAsync(payment, data, ct);
+    }
+
+    private async Task<VnPayCallbackOutcome> ApplySuccessAsync(Payment payment, VnPayCallbackData data, CancellationToken ct)
+    {
+        await db.Entry(payment).ReloadAsync(ct);
+        if (payment.Status == PaymentStatus.Succeeded)
+            return new VnPayCallbackOutcome(VnPayResponseCodes.AlreadyProcessed, "Order already processed.", ToView(payment));
+
+        var booking = await db.Bookings.SingleAsync(x => x.Id == payment.BookingId, ct);
+        // Lock order Showtime → Booking → Payment mirrors cancellation and expiry so that a
+        // callback racing the expiration worker produces exactly one committed outcome.
+        await db.LockRowAsync("Showtimes", booking.ShowtimeId, ct);
+        await db.LockRowAsync("Bookings", booking.Id, ct);
+        await db.LockRowAsync("Payments", payment.Id, ct);
+        await db.Entry(payment).ReloadAsync(ct);
+        await db.Entry(booking).ReloadAsync(ct);
+        if (payment.Status == PaymentStatus.Succeeded)
+            return new VnPayCallbackOutcome(VnPayResponseCodes.AlreadyProcessed, "Order already processed.", ToView(payment));
+
+        var now = UtcNow;
+        var seats = await db.ShowtimeSeats.Where(x => x.ShowtimeId == booking.ShowtimeId && x.CurrentBookingId == booking.Id)
+            .ToListAsync(ct);
+        var itemCount = await db.BookingItems.CountAsync(x => x.BookingId == booking.Id, ct);
+        var canFulfill = booking.Status == BookingStatus.Pending &&
+            booking.HoldExpiresAtUtc is DateTime expiry && now < expiry &&
+            itemCount > 0 && seats.Count == itemCount &&
+            seats.All(x => x.Status == ShowtimeSeatStatus.Held);
+
+        if (canFulfill)
+        {
+            payment.MarkSucceeded(now, data.TransactionId, data.ResponseCode, data.TransactionStatus, PaymentProcessingStatus.Fulfilled);
+            booking.Confirm(now);
+            foreach (var seat in seats) seat.Sell(booking.Id);
+        }
+        else
+        {
+            // The money arrived after the booking could no longer be honoured, so record it for
+            // a manual refund review instead of touching the booking.
+            payment.MarkSucceeded(now, data.TransactionId, data.ResponseCode, data.TransactionStatus, PaymentProcessingStatus.RequiresRefundReview);
+        }
+        await db.SaveChangesAsync(ct);
+        await db.Database.CurrentTransaction!.CommitAsync(ct);
+        return new VnPayCallbackOutcome(VnPayResponseCodes.Success, "Confirm Success.", ToView(payment));
     }
 
     private static PaymentView ToView(Payment payment) => new(

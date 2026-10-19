@@ -1,5 +1,3 @@
-using System.Security.Cryptography;
-using System.Text;
 using LumiCine.Application.Payments;
 using LumiCine.Domain.Bookings;
 using LumiCine.Domain.Cinemas;
@@ -14,15 +12,12 @@ namespace LumiCine.IntegrationTests.Payments;
 [Collection(PostgresDatabaseCollection.Name)]
 public sealed class VnPayIpnValidationTests(PostgresDatabaseFixture fixture)
 {
-    private const string HashSecret = "test-secret-value-0123456789";
-    private const string TmnCode = "LUMITEST";
-
     [Fact]
     public async Task Invalid_signatures_are_rejected_before_any_lookup()
     {
         using var factory = new ApiWebApplicationFactory(connectionString: fixture.ConnectionString);
         var (payment, _) = await InsertPendingPaymentAsync();
-        var parameters = SignedCallbackParameters(payment);
+        var parameters = VnPayCallbacks.SignedCallbackParameters(payment);
         parameters["vnp_Amount"] = ["99900"];
 
         var outcome = await ApplyCallbackAsync(factory, parameters);
@@ -35,7 +30,7 @@ public sealed class VnPayIpnValidationTests(PostgresDatabaseFixture fixture)
     public async Task Unknown_transaction_references_are_reported_as_not_found()
     {
         using var factory = new ApiWebApplicationFactory(connectionString: fixture.ConnectionString);
-        var parameters = SignedCallbackParameters(merchantReference: "LCUNKNOWN.000000000000", amountMinor: 20000);
+        var parameters = VnPayCallbacks.SignedCallbackParameters(merchantReference: "LCUNKNOWN.000000000000", amountMinor: 20000);
 
         var outcome = await ApplyCallbackAsync(factory, parameters);
 
@@ -48,7 +43,7 @@ public sealed class VnPayIpnValidationTests(PostgresDatabaseFixture fixture)
     {
         using var factory = new ApiWebApplicationFactory(connectionString: fixture.ConnectionString);
         var (payment, _) = await InsertPendingPaymentAsync();
-        var parameters = SignedCallbackParameters(payment, amountMinor: (long)(payment.Amount * 100) + 100);
+        var parameters = VnPayCallbacks.SignedCallbackParameters(payment, amountMinor: (long)(payment.Amount * 100) + 100);
 
         var outcome = await ApplyCallbackAsync(factory, parameters);
 
@@ -61,7 +56,7 @@ public sealed class VnPayIpnValidationTests(PostgresDatabaseFixture fixture)
     {
         using var factory = new ApiWebApplicationFactory(connectionString: fixture.ConnectionString);
         var (payment, _) = await InsertPendingPaymentAsync();
-        var parameters = SignedCallbackParameters(payment, responseCode: "24", transactionStatus: "02");
+        var parameters = VnPayCallbacks.SignedCallbackParameters(payment, responseCode: "24", transactionStatus: "02");
 
         var outcome = await ApplyCallbackAsync(factory, parameters);
 
@@ -82,7 +77,7 @@ public sealed class VnPayIpnValidationTests(PostgresDatabaseFixture fixture)
         using var factory = new ApiWebApplicationFactory(connectionString: fixture.ConnectionString);
         var (payment, booking) = await InsertPendingPaymentAsync();
         MarkPaymentFailed(payment);
-        var parameters = SignedCallbackParameters(payment, responseCode: "24", transactionStatus: "02");
+        var parameters = VnPayCallbacks.SignedCallbackParameters(payment, responseCode: "24", transactionStatus: "02");
 
         var outcome = await ApplyCallbackAsync(factory, parameters);
 
@@ -99,7 +94,7 @@ public sealed class VnPayIpnValidationTests(PostgresDatabaseFixture fixture)
         using var factory = new ApiWebApplicationFactory(connectionString: fixture.ConnectionString);
         var (payment, _) = await InsertPendingPaymentAsync();
         MarkPaymentSucceeded(payment);
-        var parameters = SignedCallbackParameters(payment, responseCode: "24", transactionStatus: "02");
+        var parameters = VnPayCallbacks.SignedCallbackParameters(payment, responseCode: "24", transactionStatus: "02");
 
         var outcome = await ApplyCallbackAsync(factory, parameters);
 
@@ -130,7 +125,7 @@ public sealed class VnPayIpnValidationTests(PostgresDatabaseFixture fixture)
     {
         using var db = fixture.CreateDbContext();
         var stored = db.Payments.Single(x => x.Id == payment.Id);
-        stored.MarkSucceeded(DateTime.UtcNow, "987", "00", "00", PaymentProcessingStatus.Fulfilled);
+        stored.MarkSucceeded(DateTime.UtcNow, stored.Id.ToString("N")[..16], "00", "00", PaymentProcessingStatus.Fulfilled);
         db.SaveChanges();
     }
 
@@ -157,49 +152,5 @@ public sealed class VnPayIpnValidationTests(PostgresDatabaseFixture fixture)
         db.Payments.Add(payment);
         await db.SaveChangesAsync();
         return (payment, booking);
-    }
-
-    private static Dictionary<string, IReadOnlyList<string>> SignedCallbackParameters(
-        Payment payment,
-        long? amountMinor = null,
-        string responseCode = "00",
-        string transactionStatus = "00",
-        Action<Dictionary<string, string>>? fields = null) =>
-        SignedCallbackParameters(payment.MerchantReference, amountMinor ?? (long)(payment.Amount * 100), responseCode, transactionStatus, fields);
-
-    private static Dictionary<string, IReadOnlyList<string>> SignedCallbackParameters(
-        string merchantReference,
-        long amountMinor,
-        string responseCode = "00",
-        string transactionStatus = "00",
-        Action<Dictionary<string, string>>? fields = null)
-    {
-        var values = new Dictionary<string, string>(StringComparer.Ordinal)
-        {
-            ["vnp_Amount"] = amountMinor.ToString(System.Globalization.CultureInfo.InvariantCulture),
-            ["vnp_BankCode"] = "NCB",
-            ["vnp_Command"] = "pay",
-            ["vnp_CreateDate"] = "20261113204500",
-            ["vnp_Currency"] = "vnd",
-            ["vnp_IpAddr"] = "127.0.0.1",
-            ["vnp_Locale"] = "vn",
-            ["vnp_OrderInfo"] = "Ve xem phim",
-            ["vnp_OrderType"] = "other",
-            ["vnp_PayDate"] = "20261113204600",
-            ["vnp_ResponseCode"] = responseCode,
-            ["vnp_TmnCode"] = TmnCode,
-            ["vnp_TransactionNo"] = "14103428",
-            ["vnp_TransactionStatus"] = transactionStatus,
-            ["vnp_TxnRef"] = merchantReference,
-            ["vnp_Version"] = "2.1.0"
-        };
-        fields?.Invoke(values);
-        var query = string.Join("&", values.OrderBy(p => p.Key, StringComparer.Ordinal)
-            .Select(p => $"{p.Key}={Uri.EscapeDataString(p.Value)}"));
-        using var hmac = new HMACSHA512(Encoding.UTF8.GetBytes(HashSecret));
-        var hash = Convert.ToHexString(hmac.ComputeHash(Encoding.UTF8.GetBytes(query))).ToLowerInvariant();
-        var parameters = values.ToDictionary(p => p.Key, p => (IReadOnlyList<string>)[p.Value]);
-        parameters["vnp_SecureHash"] = [hash];
-        return parameters;
     }
 }
