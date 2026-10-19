@@ -182,6 +182,74 @@ public sealed class VnPayConfirmationTests(PostgresDatabaseFixture fixture)
         Assert.Equal(0, await verify.Tickets.CountAsync(x => itemIds.Contains(x.BookingItemId)));
     }
 
+    [Fact]
+    public async Task Success_after_a_failed_payment_fulfills_the_booking_when_it_is_still_holdable()
+    {
+        using var factory = new ApiWebApplicationFactory(connectionString: fixture.ConnectionString);
+        var (payment, booking, seats) = await InsertPendingPaymentAsync();
+        MarkPayment(payment, p => p.MarkFailed(DateTime.UtcNow, "07", "05"));
+        var parameters = VnPayCallbacks.SignedCallbackParameters(payment);
+
+        var outcome = await ApplyCallbackAsync(factory, parameters);
+
+        Assert.Equal(VnPayResponseCodes.Success, outcome.RspCode);
+        Assert.Equal(PaymentStatus.Succeeded.ToString(), outcome.Payment!.Status);
+        Assert.Equal(PaymentProcessingStatus.Fulfilled.ToString(), outcome.Payment.ProcessingStatus);
+        await using var db = fixture.CreateDbContext();
+        Assert.Equal(BookingStatus.Confirmed, (await db.Bookings.SingleAsync(x => x.Id == booking.Id)).Status);
+        Assert.All(await db.ShowtimeSeats.Where(x => seats.Contains(x.Id)).ToListAsync(),
+            seat => Assert.Equal(ShowtimeSeatStatus.Sold, seat.Status));
+    }
+
+    [Fact]
+    public async Task Success_after_a_failed_payment_on_an_expired_booking_requires_refund_review()
+    {
+        using var factory = new ApiWebApplicationFactory(connectionString: fixture.ConnectionString);
+        var (payment, booking, _) = await InsertPendingPaymentAsync(holdDuration: TimeSpan.FromMinutes(-1));
+        MarkPayment(payment, p => p.MarkFailed(DateTime.UtcNow.AddMinutes(-5), "24", "02"));
+        var parameters = VnPayCallbacks.SignedCallbackParameters(payment);
+
+        var outcome = await ApplyCallbackAsync(factory, parameters);
+
+        Assert.Equal(VnPayResponseCodes.Success, outcome.RspCode);
+        Assert.Equal(PaymentProcessingStatus.RequiresRefundReview.ToString(), outcome.Payment!.ProcessingStatus);
+        await using var db = fixture.CreateDbContext();
+        Assert.NotEqual(BookingStatus.Confirmed, (await db.Bookings.SingleAsync(x => x.Id == booking.Id)).Status);
+    }
+
+    [Fact]
+    public async Task Repeated_success_after_refund_review_returns_the_recorded_transaction()
+    {
+        using var factory = new ApiWebApplicationFactory(connectionString: fixture.ConnectionString);
+        var (payment, booking, seats) = await InsertPendingPaymentAsync();
+        await using (var db = fixture.CreateDbContext())
+        {
+            await db.ShowtimeSeats.Where(x => x.Id == seats[0])
+                .ExecuteUpdateAsync(update => update.SetProperty(x => x.Status, ShowtimeSeatStatus.Available)
+                    .SetProperty(x => x.CurrentBookingId, (Guid?)null));
+        }
+        var parameters = VnPayCallbacks.SignedCallbackParameters(payment);
+        var first = await ApplyCallbackAsync(factory, parameters);
+        Assert.Equal(PaymentProcessingStatus.RequiresRefundReview.ToString(), first.Payment!.ProcessingStatus);
+
+        var replay = await ApplyCallbackAsync(factory, parameters);
+
+        Assert.Equal(VnPayResponseCodes.AlreadyProcessed, replay.RspCode);
+        Assert.Equal(first.Payment.Id, replay.Payment!.Id);
+        Assert.Equal(first.Payment.VnPayTransactionId, replay.Payment.VnPayTransactionId);
+        Assert.Equal(PaymentProcessingStatus.RequiresRefundReview.ToString(), replay.Payment.ProcessingStatus);
+        await using var verify = fixture.CreateDbContext();
+        Assert.Equal(BookingStatus.Pending, (await verify.Bookings.SingleAsync(x => x.Id == booking.Id)).Status);
+    }
+
+    private void MarkPayment(Payment payment, Action<Payment> mutate)
+    {
+        using var db = fixture.CreateDbContext();
+        var stored = db.Payments.Single(x => x.Id == payment.Id);
+        mutate(stored);
+        db.SaveChanges();
+    }
+
     private static Microsoft.AspNetCore.Mvc.Testing.WebApplicationFactory<Program> WithNotifier(
         ApiWebApplicationFactory baseFactory, IShowtimeAvailabilityNotifier notifier) =>
         baseFactory.WithWebHostBuilder(builder => builder.ConfigureTestServices(services =>
