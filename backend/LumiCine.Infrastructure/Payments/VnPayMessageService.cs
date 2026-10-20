@@ -109,6 +109,8 @@ public sealed class VnPayMessageService(IOptions<VnPayOptions> options) : IVnPay
         var values = new Dictionary<string, string>(StringComparer.Ordinal);
         foreach (var (key, list) in parameters)
         {
+            if (!key.StartsWith("vnp_", StringComparison.Ordinal))
+                continue;
             if (list.Count != 1)
                 throw InvalidSignature("Repeated parameters are not allowed.");
             values[key] = list[0];
