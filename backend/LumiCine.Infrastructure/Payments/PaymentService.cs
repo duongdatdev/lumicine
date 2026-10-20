@@ -14,6 +14,7 @@ public sealed class PaymentService(
     LumiCineDbContext db,
     TimeProvider clock,
     IVnPayMessageService messages,
+    IVnPayTransactionQueryClient queries,
     IShowtimeAvailabilityNotifier notifier,
     ILogger<PaymentService> logger) : IPaymentService
 {
@@ -201,6 +202,30 @@ public sealed class PaymentService(
         {
             // Realtime availability is best effort; the payment result is already committed.
             logger.LogWarning(ex, "Could not publish availability for showtime {ShowtimeId} after payment.", showtimeId);
+        }
+    }
+
+    public async Task<VnPayReconcileResult> ReconcileAsync(Guid paymentId, CancellationToken ct)
+    {
+        await using var tx = await db.Database.BeginTransactionAsync(ct);
+        try
+        {
+            var payment = await db.Payments.SingleOrDefaultAsync(x => x.Id == paymentId, ct)
+                ?? throw new ApiException(404, "Payment was not found.");
+            var query = await queries.QueryAsync(payment.MerchantReference, payment.Amount, payment.CreatedAtUtc, ct);
+            var view = ToView(payment);
+            if (query.AmountMinor is long amountMinor && amountMinor != VnPayAmount.ToMinorUnits(payment.Amount))
+                return new VnPayReconcileResult(VnPayResponseCodes.InvalidAmount, "Invalid amount.", view);
+
+            var data = new VnPayCallbackData(payment.MerchantReference,
+                query.AmountMinor ?? VnPayAmount.ToMinorUnits(payment.Amount),
+                query.ResponseCode, query.TransactionStatus ?? string.Empty, query.TransactionNo ?? string.Empty, string.Empty, null);
+            var outcome = await ApplyResultAsync(payment, data, ct);
+            return new VnPayReconcileResult(outcome.RspCode, outcome.Message, outcome.Payment ?? view);
+        }
+        catch (DbUpdateException ex) when (FindPostgres(ex)?.SqlState == PostgresErrorCodes.UniqueViolation)
+        {
+            throw new ApiException(409, "The payment result conflicts with a concurrent change.");
         }
     }
 

@@ -28,9 +28,12 @@ public sealed record PaymentView(
 
 public sealed record VnPayCallbackOutcome(string RspCode, string Message, PaymentView? Payment);
 
+public sealed record VnPayReconcileResult(string RspCode, string Message, PaymentView Payment);
+
 public interface IPaymentService
 {
     Task<BookingPaymentLink> CreateBookingPaymentAsync(Guid userId, Guid bookingId, CreateBookingPaymentRequest request, string clientIpAddress, CancellationToken cancellationToken);
     Task<PaymentView> GetOwnedAsync(Guid userId, Guid paymentId, CancellationToken cancellationToken);
     Task<VnPayCallbackOutcome> ApplyVnPayCallbackAsync(IReadOnlyDictionary<string, IReadOnlyList<string>> parameters, CancellationToken cancellationToken);
+    Task<VnPayReconcileResult> ReconcileAsync(Guid paymentId, CancellationToken cancellationToken);
 }
