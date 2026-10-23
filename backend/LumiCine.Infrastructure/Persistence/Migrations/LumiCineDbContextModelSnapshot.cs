@@ -122,6 +122,59 @@ namespace LumiCine.Infrastructure.Persistence.Migrations
                         });
                 });
 
+            modelBuilder.Entity("LumiCine.Domain.Bookings.CheckInLog", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("AttemptedTicketCode")
+                        .HasMaxLength(60)
+                        .HasColumnType("character varying(60)");
+
+                    b.Property<Guid?>("BookingId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime>("LoggedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid>("RequestId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Result")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("character varying(30)");
+
+                    b.Property<Guid?>("ShowtimeId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("StaffUserId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid?>("TicketId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("BookingId");
+
+                    b.HasIndex("Result");
+
+                    b.HasIndex("ShowtimeId");
+
+                    b.HasIndex("TicketId");
+
+                    b.HasIndex("StaffUserId", "RequestId")
+                        .IsUnique();
+
+                    b.ToTable("CheckInLogs", null, t =>
+                        {
+                            t.HasCheckConstraint("CK_CheckInLogs_Result", "\"Result\" IN ('Success', 'DuplicateScan', 'TicketNotFound', 'BookingNotConfirmed', 'ShowtimeCancelled', 'OutsideWindow', 'TicketVoided')");
+
+                            t.HasCheckConstraint("CK_CheckInLogs_Success_Has_Ticket", "\"Result\" <> 'Success' OR \"TicketId\" IS NOT NULL");
+                        });
+                });
+
             modelBuilder.Entity("LumiCine.Domain.Bookings.Payment", b =>
                 {
                     b.Property<Guid>("Id")
@@ -980,6 +1033,30 @@ namespace LumiCine.Infrastructure.Persistence.Migrations
                         .HasPrincipalKey("Id", "ShowtimeId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
+                });
+
+            modelBuilder.Entity("LumiCine.Domain.Bookings.CheckInLog", b =>
+                {
+                    b.HasOne("LumiCine.Domain.Bookings.Booking", null)
+                        .WithMany()
+                        .HasForeignKey("BookingId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("LumiCine.Domain.Scheduling.Showtime", null)
+                        .WithMany()
+                        .HasForeignKey("ShowtimeId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("LumiCine.Infrastructure.Identity.ApplicationUser", null)
+                        .WithMany()
+                        .HasForeignKey("StaffUserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("LumiCine.Domain.Bookings.Ticket", null)
+                        .WithMany()
+                        .HasForeignKey("TicketId")
+                        .OnDelete(DeleteBehavior.Restrict);
                 });
 
             modelBuilder.Entity("LumiCine.Domain.Bookings.Payment", b =>

@@ -27,6 +27,7 @@ public sealed class LumiCineDbContext(DbContextOptions<LumiCineDbContext> option
     public DbSet<Ticket> Tickets => Set<Ticket>();
     public DbSet<Payment> Payments => Set<Payment>();
     public DbSet<TicketEmailDelivery> TicketEmailDeliveries => Set<TicketEmailDelivery>();
+    public DbSet<CheckInLog> CheckInLogs => Set<CheckInLog>();
     public DbSet<AuthSession> AuthSessions => Set<AuthSession>();
     public DbSet<RefreshToken> RefreshTokens => Set<RefreshToken>();
 
