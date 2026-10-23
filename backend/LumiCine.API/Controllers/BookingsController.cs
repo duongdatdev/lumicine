@@ -13,7 +13,10 @@ namespace LumiCine.API.Controllers;
 [Authorize]
 [ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)]
 [Route("api/bookings")]
-public sealed class BookingsController(IBookingService bookings, IPaymentService payments) : ControllerBase
+public sealed class BookingsController(
+    IBookingService bookings,
+    IPaymentService payments,
+    ITicketService tickets) : ControllerBase
 {
     [HttpPost]
     [ProducesResponseType<BookingDetails>(StatusCodes.Status201Created)]
@@ -38,6 +41,11 @@ public sealed class BookingsController(IBookingService bookings, IPaymentService
     public Task<BookingPaymentLink> CreateVnPayPayment(Guid id, CreateBookingPaymentRequest request,
         CancellationToken cancellationToken) =>
         payments.CreateBookingPaymentAsync(UserId, id, request, ClientIpAddress, cancellationToken);
+
+    [HttpGet("{id:guid}/tickets")]
+    [ProducesResponseType<IReadOnlyList<TicketDetails>>(StatusCodes.Status200OK)]
+    public Task<IReadOnlyList<TicketDetails>> ListTickets(Guid id, CancellationToken cancellationToken) =>
+        tickets.ListForBookingAsync(UserId, id, cancellationToken);
 
     [HttpPost("{id:guid}/cancel")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]

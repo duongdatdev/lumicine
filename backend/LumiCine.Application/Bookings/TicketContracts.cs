@@ -19,7 +19,11 @@ public sealed record TicketDetails(
     string SeatType,
     decimal UnitPrice);
 
-public sealed record TicketQrImage(byte[] Image);
+public interface ITicketService
+{
+    Task<IReadOnlyList<TicketDetails>> ListForBookingAsync(Guid userId, Guid bookingId, CancellationToken cancellationToken);
+    Task<TicketDetails> GetOwnedAsync(Guid userId, Guid ticketId, CancellationToken cancellationToken);
+}
 
 public sealed record CheckInRequest(Guid RequestId, string TicketCode);
 
@@ -45,14 +49,6 @@ public static class CheckInOutcomes
     public const string ShowtimeCancelled = "ShowtimeCancelled";
     public const string OutsideWindow = "OutsideWindow";
     public const string TicketVoided = "TicketVoided";
-}
-
-public interface ITicketService
-{
-    Task<IReadOnlyList<TicketDetails>> ListForBookingAsync(Guid userId, Guid bookingId, CancellationToken cancellationToken);
-    Task<TicketDetails> GetOwnedAsync(Guid userId, Guid ticketId, CancellationToken cancellationToken);
-    Task<TicketQrImage> GetQrImageAsync(Guid userId, Guid ticketId, CancellationToken cancellationToken);
-    Task ResendConfirmationEmailAsync(Guid userId, Guid bookingId, CancellationToken cancellationToken);
 }
 
 public interface ICheckInService
