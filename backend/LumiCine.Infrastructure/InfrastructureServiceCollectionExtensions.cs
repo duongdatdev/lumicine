@@ -56,6 +56,7 @@ public static class InfrastructureServiceCollectionExtensions
         services.AddScoped<IBookingService, BookingService>();
         services.AddScoped<IPaymentService, PaymentService>();
         services.AddScoped<ITicketService, TicketService>();
+        services.AddSingleton<ITicketQrRenderer, TicketQrRenderer>();
         services.AddScoped<IVnPayMessageService, VnPayMessageService>();
         services.AddHttpClient<IVnPayTransactionQueryClient, VnPayTransactionQueryClient>();
         services.AddScoped<ICinemaService, CinemaService>();

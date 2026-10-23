@@ -17,5 +17,13 @@ public sealed class TicketsController(ITicketService tickets) : ControllerBase
     public Task<TicketDetails> Get(Guid id, CancellationToken cancellationToken) =>
         tickets.GetOwnedAsync(UserId, id, cancellationToken);
 
+    [HttpGet("{id:guid}/qr")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    public async Task<IActionResult> GetQr(Guid id, CancellationToken cancellationToken)
+    {
+        var qr = await tickets.GetQrImageAsync(UserId, id, cancellationToken);
+        return File(qr.Image, "image/png");
+    }
+
     private Guid UserId => Guid.Parse(User.FindFirstValue(JwtRegisteredClaimNames.Sub)!);
 }

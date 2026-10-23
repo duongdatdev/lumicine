@@ -19,10 +19,18 @@ public sealed record TicketDetails(
     string SeatType,
     decimal UnitPrice);
 
+public sealed record TicketQrImage(byte[] Image);
+
+public interface ITicketQrRenderer
+{
+    byte[] RenderPng(string ticketCode);
+}
+
 public interface ITicketService
 {
     Task<IReadOnlyList<TicketDetails>> ListForBookingAsync(Guid userId, Guid bookingId, CancellationToken cancellationToken);
     Task<TicketDetails> GetOwnedAsync(Guid userId, Guid ticketId, CancellationToken cancellationToken);
+    Task<TicketQrImage> GetQrImageAsync(Guid userId, Guid ticketId, CancellationToken cancellationToken);
 }
 
 public sealed record CheckInRequest(Guid RequestId, string TicketCode);

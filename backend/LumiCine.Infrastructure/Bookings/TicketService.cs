@@ -6,7 +6,7 @@ using Microsoft.EntityFrameworkCore;
 
 namespace LumiCine.Infrastructure.Bookings;
 
-public sealed class TicketService(LumiCineDbContext db) : ITicketService
+public sealed class TicketService(LumiCineDbContext db, ITicketQrRenderer qrRenderer) : ITicketService
 {
     public async Task<IReadOnlyList<TicketDetails>> ListForBookingAsync(Guid userId, Guid bookingId, CancellationToken ct)
     {
@@ -19,6 +19,12 @@ public sealed class TicketService(LumiCineDbContext db) : ITicketService
     {
         var rows = await QueryTickets(ticketId: ticketId, ownerUserId: userId).ToListAsync(ct);
         return rows.Count == 0 ? throw new ApiException(404, "Ticket was not found.") : ToDetails(rows[0]);
+    }
+
+    public async Task<TicketQrImage> GetQrImageAsync(Guid userId, Guid ticketId, CancellationToken ct)
+    {
+        var rows = await QueryTickets(ticketId: ticketId, ownerUserId: userId).ToListAsync(ct);
+        return rows.Count == 0 ? throw new ApiException(404, "Ticket was not found.") : new TicketQrImage(qrRenderer.RenderPng(rows[0].TicketCode));
     }
 
     private IQueryable<TicketRow> QueryTickets(Guid? ticketId = null, Guid? ownerUserId = null, Guid? bookingId = null)
