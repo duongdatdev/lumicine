@@ -66,6 +66,49 @@ public sealed class TicketEndpointTests(PostgresDatabaseFixture fixture)
     }
 
     [Fact]
+    public async Task Resend_confirmation_email_queues_a_fresh_delivery_once_per_minute()
+    {
+        using var factory = new ApiWebApplicationFactory(connectionString: fixture.ConnectionString);
+        var (client, booking) = await CreateFulfilledBookingAsync(factory);
+        await using (var db = fixture.CreateDbContext())
+        {
+            await db.TicketEmailDeliveries.ExecuteDeleteAsync();
+        }
+
+        using var first = await client.PostAsync($"/api/bookings/{booking.Id}/tickets/resend-email", null);
+        Assert.Equal(HttpStatusCode.NoContent, first.StatusCode);
+        await using (var verify = fixture.CreateDbContext())
+        {
+            var pending = await verify.TicketEmailDeliveries.AsNoTracking()
+                .SingleAsync(x => x.BookingId == booking.Id && x.Status == TicketEmailDeliveryStatus.Pending);
+            Assert.Equal(0, pending.AttemptCount);
+            // The requeued delivery reuses the already issued tickets.
+            var itemIds = await verify.BookingItems.Where(x => x.BookingId == booking.Id).Select(x => x.Id).ToListAsync();
+            Assert.Equal(itemIds.Count, await verify.Tickets.CountAsync(x => itemIds.Contains(x.BookingItemId)));
+        }
+
+        using var second = await client.PostAsync($"/api/bookings/{booking.Id}/tickets/resend-email", null);
+        Assert.Equal((HttpStatusCode)429, second.StatusCode);
+    }
+
+    [Fact]
+    public async Task Resend_confirmation_email_rejects_foreign_and_unissued_bookings()
+    {
+        using var factory = new ApiWebApplicationFactory(connectionString: fixture.ConnectionString);
+        var (client, booking) = await CreateFulfilledBookingAsync(factory);
+        var (foreign, _) = await CreateClientAsync(factory);
+        var (pendingClient, pendingBooking) = await CreatePendingBookingAsync(factory);
+
+        using var foreignResend = await foreign.PostAsync($"/api/bookings/{booking.Id}/tickets/resend-email", null);
+        using var unissued = await pendingClient.PostAsync($"/api/bookings/{pendingBooking.Id}/tickets/resend-email", null);
+        using var anonymous = await factory.CreateClient().PostAsync($"/api/bookings/{booking.Id}/tickets/resend-email", null);
+
+        Assert.Equal(HttpStatusCode.NotFound, foreignResend.StatusCode);
+        Assert.Equal(HttpStatusCode.Conflict, unissued.StatusCode);
+        Assert.Equal(HttpStatusCode.Unauthorized, anonymous.StatusCode);
+    }
+
+    [Fact]
     public async Task Used_tickets_expose_the_used_time_to_the_owner()
     {
         using var factory = new ApiWebApplicationFactory(connectionString: fixture.ConnectionString);

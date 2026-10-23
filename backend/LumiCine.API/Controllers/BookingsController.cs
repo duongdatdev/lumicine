@@ -42,6 +42,14 @@ public sealed class BookingsController(
         CancellationToken cancellationToken) =>
         payments.CreateBookingPaymentAsync(UserId, id, request, ClientIpAddress, cancellationToken);
 
+    [HttpPost("{id:guid}/tickets/resend-email")]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    public async Task<IActionResult> ResendTicketEmail(Guid id, CancellationToken cancellationToken)
+    {
+        await tickets.ResendConfirmationEmailAsync(UserId, id, cancellationToken);
+        return NoContent();
+    }
+
     [HttpGet("{id:guid}/tickets")]
     [ProducesResponseType<IReadOnlyList<TicketDetails>>(StatusCodes.Status200OK)]
     public Task<IReadOnlyList<TicketDetails>> ListTickets(Guid id, CancellationToken cancellationToken) =>
