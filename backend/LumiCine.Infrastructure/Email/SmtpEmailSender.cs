@@ -34,7 +34,7 @@ public sealed class SmtpEmailSender : IEmailSender
         mail.From.Add(new MailboxAddress(_options.FromName, _options.FromAddress));
         mail.To.Add(MailboxAddress.Parse(message.To));
         mail.Subject = message.Subject;
-        mail.Body = new TextPart("plain") { Text = message.Body };
+        mail.Body = BuildBody(message);
 
         try
         {
@@ -55,6 +55,31 @@ public sealed class SmtpEmailSender : IEmailSender
         {
             throw new EmailDeliveryException("Email delivery failed.");
         }
+    }
+
+    private static MimeEntity BuildBody(EmailMessage message)
+    {
+        var plain = new TextPart("plain") { Text = message.Body };
+        if (message.HtmlBody is null && message.InlineAttachments.Count == 0)
+            return plain;
+
+        var html = new TextPart("html") { Text = message.HtmlBody ?? message.Body };
+        if (message.InlineAttachments.Count == 0)
+            return new Multipart("alternative") { plain, html };
+
+        var related = new Multipart("related") { html };
+        foreach (var attachment in message.InlineAttachments)
+        {
+            related.Add(new MimePart(attachment.ContentType)
+            {
+                Content = new MimeContent(new MemoryStream(attachment.Data)),
+                ContentId = attachment.ContentId,
+                FileName = attachment.FileName,
+                ContentDisposition = new ContentDisposition(ContentDisposition.Inline),
+                ContentTransferEncoding = ContentEncoding.Base64
+            });
+        }
+        return new Multipart("alternative") { plain, related };
     }
 
     private void ValidateOptions()

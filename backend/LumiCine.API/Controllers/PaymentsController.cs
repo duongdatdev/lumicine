@@ -59,7 +59,7 @@ public sealed class PaymentsController(IPaymentService payments) : ControllerBas
         var parameters = new Dictionary<string, IReadOnlyList<string>>(StringComparer.Ordinal);
         foreach (var key in Request.Query.Keys)
         {
-            parameters[key] = [.. Request.Query[key]];
+            parameters[key] = Request.Query[key].Where(value => value is not null).Select(value => value!).ToArray();
         }
         return parameters;
     }
