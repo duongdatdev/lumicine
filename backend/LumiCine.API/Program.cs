@@ -94,7 +94,10 @@ if (seedMode == SeedMode.None)
     builder.Services.AddSignalR();
     builder.Services.AddSingleton<IShowtimeAvailabilityNotifier, SignalRShowtimeAvailabilityNotifier>();
     if (!string.IsNullOrWhiteSpace(builder.Configuration.GetConnectionString("LumiCine")))
+    {
         builder.Services.AddHostedService<BookingExpirationWorker>();
+        builder.Services.AddHostedService<TicketEmailWorker>();
+    }
 }
 else
 {

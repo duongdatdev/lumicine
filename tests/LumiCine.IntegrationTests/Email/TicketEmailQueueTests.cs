@@ -94,7 +94,7 @@ public sealed class TicketEmailQueueTests(PostgresDatabaseFixture fixture)
         var claimed = await service.ClaimDueAsync(10, CancellationToken.None);
         var second = await service.ClaimDueAsync(10, CancellationToken.None);
 
-        Assert.Equal([delivery.Id], claimed);
+        Assert.Equal([delivery.Id], claimed.Select(x => x.DeliveryId).ToArray());
         Assert.Empty(second);
         Assert.Equal(delivery.Id, Assert.Single(await db.TicketEmailDeliveries.Where(x => x.LeaseUntilUtc != null).Select(x => x.Id).ToListAsync()));
 
@@ -126,7 +126,7 @@ public sealed class TicketEmailQueueTests(PostgresDatabaseFixture fixture)
                 .ExecuteUpdateAsync(update => update.SetProperty(x => x.LeaseUntilUtc, DateTime.UtcNow.AddMinutes(-1)));
         }
         var reclaimed = await service.ClaimDueAsync(10, CancellationToken.None);
-        Assert.Equal([delivery.Id], reclaimed);
+        Assert.Equal([delivery.Id], reclaimed.Select(x => x.DeliveryId).ToArray());
 
         await service.RetryAsync(delivery.Id, "SMTP unavailable", CancellationToken.None);
         await using var verify = fixture.CreateDbContext();

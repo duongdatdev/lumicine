@@ -22,7 +22,7 @@ public sealed class TicketEmailDeliveryService(LumiCineDbContext db, TimeProvide
         await db.SaveChangesAsync(ct);
     }
 
-    public async Task<IReadOnlyList<Guid>> ClaimDueAsync(int batchSize, CancellationToken ct)
+    public async Task<IReadOnlyList<TicketEmailDeliveryWork>> ClaimDueAsync(int batchSize, CancellationToken ct)
     {
         var now = UtcNow;
         var candidates = await db.TicketEmailDeliveries.AsNoTracking()
@@ -30,21 +30,21 @@ public sealed class TicketEmailDeliveryService(LumiCineDbContext db, TimeProvide
                 (x.LeaseUntilUtc == null || x.LeaseUntilUtc <= now))
             .OrderBy(x => x.NextAttemptAtUtc).ThenBy(x => x.Id)
             .Take(Math.Clamp(batchSize, 1, 100))
-            .Select(x => x.Id)
+            .Select(x => new { x.Id, x.BookingId })
             .ToListAsync(ct);
         var leaseUntil = now.Add(TimeSpan.FromMinutes(5));
-        var claimed = new List<Guid>();
-        foreach (var id in candidates)
+        var claimed = new List<TicketEmailDeliveryWork>();
+        foreach (var candidate in candidates)
         {
             // The conditional update is the atomic lease: only one worker's update affects the row.
             var affected = await db.TicketEmailDeliveries
-                .Where(x => x.Id == id && x.Status == TicketEmailDeliveryStatus.Pending &&
+                .Where(x => x.Id == candidate.Id && x.Status == TicketEmailDeliveryStatus.Pending &&
                     (x.LeaseUntilUtc == null || x.LeaseUntilUtc <= now))
                 .ExecuteUpdateAsync(update => update
                     .SetProperty(x => x.LeaseUntilUtc, leaseUntil)
                     .SetProperty(x => x.UpdatedAtUtc, now), ct);
             if (affected == 1)
-                claimed.Add(id);
+                claimed.Add(new TicketEmailDeliveryWork(candidate.Id, candidate.BookingId));
         }
         return claimed;
     }
