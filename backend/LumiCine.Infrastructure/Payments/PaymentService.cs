@@ -270,6 +270,37 @@ public sealed class PaymentService(
         return ToAdminView(payment, bookings);
     }
 
+    public async Task<AdminPaymentView> RecordRefundAsync(Guid adminUserId, Guid paymentId, RecordRefundRequest request, CancellationToken ct)
+    {
+        if (adminUserId == Guid.Empty)
+            throw new ApiException(400, "A valid admin account is required.");
+        if (request is null || string.IsNullOrWhiteSpace(request.Reference))
+            throw new ApiException(400, "A refund reference is required.");
+        if (request.Reference.Length > 200 || (request.Note?.Length ?? 0) > 500)
+            throw new ApiException(400, "The refund reference or note is too long.");
+
+        await using var tx = await db.Database.BeginTransactionAsync(ct);
+        var payment = await db.Payments.SingleOrDefaultAsync(x => x.Id == paymentId, ct)
+            ?? throw new ApiException(404, "Payment was not found.");
+        try
+        {
+            payment.RecordRefund(UtcNow, adminUserId, request.Reference.Trim(), request.Note);
+            await db.SaveChangesAsync(ct);
+            await tx.CommitAsync(ct);
+        }
+        catch (InvalidOperationException)
+        {
+            throw new ApiException(409, "Only payments flagged for refund review can record a refund.");
+        }
+        catch (DbUpdateException ex) when (FindPostgres(ex)?.SqlState == PostgresErrorCodes.UniqueViolation)
+        {
+            throw new ApiException(409, "The refund record conflicts with a concurrent change.");
+        }
+
+        var bookings = await DescribeBookingsAsync([payment.BookingId], ct);
+        return ToAdminView(payment, bookings);
+    }
+
     private async Task<IReadOnlyDictionary<Guid, (string Code, string? Email)>> DescribeBookingsAsync(IReadOnlyList<Guid> bookingIds, CancellationToken ct)
     {
         if (bookingIds.Count == 0)

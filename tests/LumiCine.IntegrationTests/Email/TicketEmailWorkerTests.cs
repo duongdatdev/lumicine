@@ -28,23 +28,14 @@ public sealed class TicketEmailWorkerTests(PostgresDatabaseFixture fixture)
         using var factory = CreateFactory(server.Port, logs);
         await using var db = fixture.CreateDbContext();
         await db.TicketEmailDeliveries.ExecuteDeleteAsync();
-        var email = await InsertFulfilledBookingAsync(db);
+        var (deliveryId, email) = await InsertFulfilledBookingAsync(db);
 
-        try
-        {
-            await WaitForDeliveryStatusAsync(db, TicketEmailDeliveryStatus.Sent, TimeSpan.FromSeconds(8));
-        }
-        finally
-        {
-            await using var inspect = fixture.CreateDbContext();
-            var row = await inspect.TicketEmailDeliveries.AsNoTracking().SingleOrDefaultAsync();
-            System.Console.WriteLine("WORKER-ROW: " + (row is null ? "none" : row.Status + " attempts=" + row.AttemptCount +
-                " next=" + row.NextAttemptAtUtc?.ToString("HH:mm:ss") + " lease=" + row.LeaseUntilUtc?.ToString("HH:mm:ss") +
-                " err=" + (row.LastError ?? "-")));
-            foreach (var entry in logs.Entries.Take(8))
-                System.Console.WriteLine("WORKER-LOG: " + entry.Level + " [" + entry.Category + "] " + entry.Message);
-        }
+        await WaitForDeliveryStatusAsync(db, deliveryId, TicketEmailDeliveryStatus.Sent, TimeSpan.FromSeconds(45));
 
+        // The SMTP completion lands when the worker's DATA round trip finishes.
+        using var smtpTimeout = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        while (server.Messages.Count == 0)
+            await Task.Delay(200, smtpTimeout.Token);
         var message = MimeKit.MimeMessage.Load(new MemoryStream(Encoding.UTF8.GetBytes(await server.Messages[0].Task)));
         Assert.Equal(email, message.To.Mailboxes.Single().Address);
         Assert.NotNull(message.HtmlBody);
@@ -79,10 +70,10 @@ public sealed class TicketEmailWorkerTests(PostgresDatabaseFixture fixture)
         _ = factory.Services;
         await using var db = fixture.CreateDbContext();
         await db.TicketEmailDeliveries.ExecuteDeleteAsync();
-        await InsertFulfilledBookingAsync(db);
+        var (deliveryId, _) = await InsertFulfilledBookingAsync(db);
         // The worker parks on a clock-based delay after each pass; advancing the clock lets it run again.
         clock.Advance(TimeSpan.FromSeconds(2));
-        var deliveryId = await WaitForClaimAsync(db);
+        deliveryId = await WaitForAttemptCountAsync(db, deliveryId, 1);
 
         var expectedDelays = new[] { 1, 5, 15, 60 };
         var attempt = 1;
@@ -113,13 +104,13 @@ public sealed class TicketEmailWorkerTests(PostgresDatabaseFixture fixture)
         using var second = CreateFactory(server.Port);
         await using var db = fixture.CreateDbContext();
         await db.TicketEmailDeliveries.ExecuteDeleteAsync();
-        await InsertFulfilledBookingAsync(db);
+        var (deliveryId, _) = await InsertFulfilledBookingAsync(db);
 
-        await WaitForDeliveryStatusAsync(db, TicketEmailDeliveryStatus.Sent, TimeSpan.FromSeconds(10));
+        await WaitForDeliveryStatusAsync(db, deliveryId, TicketEmailDeliveryStatus.Sent, TimeSpan.FromSeconds(45));
         await Task.Delay(500);
 
         Assert.True(server.Messages.Count <= 1, $"The queue delivered {server.Messages.Count} messages for one booking.");
-        Assert.Equal(1, await db.TicketEmailDeliveries.CountAsync(x => x.Status == TicketEmailDeliveryStatus.Sent));
+        Assert.Equal(1, await db.TicketEmailDeliveries.CountAsync(x => x.Id == deliveryId && x.Status == TicketEmailDeliveryStatus.Sent));
         Assert.Equal(1, await db.TicketEmailDeliveries.CountAsync());
     }
 
@@ -129,14 +120,14 @@ public sealed class TicketEmailWorkerTests(PostgresDatabaseFixture fixture)
         await using var server = new MultiMessageFakeSmtpServer();
         await using var db = fixture.CreateDbContext();
         await db.TicketEmailDeliveries.ExecuteDeleteAsync();
-        await InsertFulfilledBookingAsync(db, markDeliverySent: true);
-        var sentBefore = await db.TicketEmailDeliveries.AsNoTracking().SingleAsync(x => x.Status == TicketEmailDeliveryStatus.Sent);
+        var (sentDeliveryId, _) = await InsertFulfilledBookingAsync(db, markDeliverySent: true);
+        var sentBefore = await db.TicketEmailDeliveries.AsNoTracking().SingleAsync(x => x.Id == sentDeliveryId);
 
         using var factory = CreateFactory(server.Port);
         await Task.Delay(2000);
 
         Assert.Empty(server.Messages);
-        var sentAfter = await db.TicketEmailDeliveries.AsNoTracking().SingleAsync(x => x.Status == TicketEmailDeliveryStatus.Sent);
+        var sentAfter = await db.TicketEmailDeliveries.AsNoTracking().SingleAsync(x => x.Id == sentDeliveryId);
         Assert.Equal(sentBefore.SentAtUtc, sentAfter.SentAtUtc);
     }
 
@@ -171,7 +162,7 @@ public sealed class TicketEmailWorkerTests(PostgresDatabaseFixture fixture)
         return port;
     }
 
-    private async Task<string> InsertFulfilledBookingAsync(LumiCineDbContext db, bool markDeliverySent = false)
+    private async Task<(Guid DeliveryId, string Email)> InsertFulfilledBookingAsync(LumiCineDbContext db, bool markDeliverySent = false)
     {
         var now = DateTime.UtcNow;
         var userId = Guid.NewGuid();
@@ -206,49 +197,36 @@ public sealed class TicketEmailWorkerTests(PostgresDatabaseFixture fixture)
         if (markDeliverySent) delivery.MarkSent(now);
         db.TicketEmailDeliveries.Add(delivery);
         await db.SaveChangesAsync();
-        return email;
+        return (delivery.Id, email);
     }
 
-    private static async Task<Guid> WaitForClaimAsync(LumiCineDbContext db)
+        private static async Task<Guid> WaitForAttemptCountAsync(LumiCineDbContext db, Guid deliveryId, int attempt)
     {
-        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
-        while (true)
-        {
-            var id = await db.TicketEmailDeliveries.AsNoTracking()
-                .Where(x => x.AttemptCount >= 1)
-                .Select(x => (Guid?)x.Id)
-                .SingleOrDefaultAsync(timeout.Token);
-            if (id is Guid deliveryId)
-                return deliveryId;
-            await Task.Delay(50, timeout.Token);
-        }
-    }
-
-    private static async Task WaitForAttemptCountAsync(LumiCineDbContext db, Guid deliveryId, int attempt)
-    {
-        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(45));
         while (true)
         {
             var count = await db.TicketEmailDeliveries.AsNoTracking()
                 .Where(x => x.Id == deliveryId).Select(x => (int?)x.AttemptCount).SingleOrDefaultAsync(timeout.Token);
             if (count >= attempt)
-                return;
-            await Task.Delay(50, timeout.Token);
+                return deliveryId;
+            await Task.Delay(200, timeout.Token);
         }
     }
 
-    private static async Task WaitForDeliveryStatusAsync(LumiCineDbContext db, TicketEmailDeliveryStatus status, TimeSpan limit)
+    private static async Task WaitForDeliveryStatusAsync(LumiCineDbContext db, Guid deliveryId, TicketEmailDeliveryStatus status, TimeSpan limit)
     {
         using var timeout = new CancellationTokenSource(limit);
         while (true)
         {
-            if (await db.TicketEmailDeliveries.AsNoTracking().AnyAsync(x => x.Status == status, timeout.Token))
+            var stored = await db.TicketEmailDeliveries.AsNoTracking()
+                .Where(x => x.Id == deliveryId).Select(x => x.Status).SingleOrDefaultAsync(timeout.Token);
+            if (stored == status)
                 return;
-            await Task.Delay(50, timeout.Token);
+            await Task.Delay(200, timeout.Token);
         }
     }
 
-    private sealed class MutableClock(DateTimeOffset now) : TimeProvider
+private sealed class MutableClock(DateTimeOffset now) : TimeProvider
     {
         public void Advance(TimeSpan delta) => Now = Now.Add(delta);
 

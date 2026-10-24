@@ -28,6 +28,8 @@ public sealed class PaymentConfiguration : IEntityTypeConfiguration<Payment>
         builder.Property(x => x.ResponseCode).HasMaxLength(16);
         builder.Property(x => x.TransactionStatus).HasMaxLength(16);
         builder.Property(x => x.PaymentUrl).HasMaxLength(1000);
+        builder.Property(x => x.RefundReference).HasMaxLength(200);
+        builder.Property(x => x.RefundNote).HasMaxLength(500);
         builder.Property(x => x.ExpiresAtUtc).HasColumnType("timestamp with time zone");
         builder.Property(x => x.CreatedAtUtc).HasColumnType("timestamp with time zone");
         builder.Property(x => x.ProcessedAtUtc).HasColumnType("timestamp with time zone");

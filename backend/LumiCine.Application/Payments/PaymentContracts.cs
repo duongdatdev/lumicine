@@ -36,6 +36,8 @@ public sealed record AdminPaymentQuery(PageQuery Paging, Guid? BookingId = null,
 
 public sealed record AdminPaymentView(PaymentView Payment, string BookingCode, string? CustomerEmail);
 
+public sealed record RecordRefundRequest(string Reference, string? Note);
+
 public interface IPaymentService
 {
     Task<BookingPaymentLink> CreateBookingPaymentAsync(Guid userId, Guid bookingId, CreateBookingPaymentRequest request, string clientIpAddress, CancellationToken cancellationToken);
@@ -44,4 +46,5 @@ public interface IPaymentService
     Task<VnPayReconcileResult> ReconcileAsync(Guid paymentId, CancellationToken cancellationToken);
     Task<PagedResult<AdminPaymentView>> ListForAdminAsync(AdminPaymentQuery query, CancellationToken cancellationToken);
     Task<AdminPaymentView> GetForAdminAsync(Guid paymentId, CancellationToken cancellationToken);
+    Task<AdminPaymentView> RecordRefundAsync(Guid adminUserId, Guid paymentId, RecordRefundRequest request, CancellationToken cancellationToken);
 }

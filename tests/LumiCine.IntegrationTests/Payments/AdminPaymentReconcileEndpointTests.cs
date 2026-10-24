@@ -21,8 +21,10 @@ public sealed class AdminPaymentReconcileEndpointTests(PostgresDatabaseFixture f
     [Fact]
     public async Task Reconcile_confirms_a_paid_transaction_and_issues_the_tickets()
     {
-        var (factory, admin, _, paymentId, bookingId) = await SetupAsync(
-            new VnPayTransactionQueryResult("00", "Confirm Success", "778899", "00", 20000));
+        var fake = new FakeQueryClient(new VnPayTransactionQueryResult("00", "Confirm Success", "778899", "00", 20000));
+        using var factory = CreateReconcileFactory(fake);
+        var (admin, _, paymentId, bookingId) = await SetupAsync(
+            factory, fake, new VnPayTransactionQueryResult("00", "Confirm Success", "778899", "00", 20000));
 
         using var response = await admin.PostAsync($"/api/admin/payments/{paymentId}/reconcile", null);
 
@@ -39,8 +41,10 @@ public sealed class AdminPaymentReconcileEndpointTests(PostgresDatabaseFixture f
     [Fact]
     public async Task Reconcile_records_a_failed_transaction()
     {
-        var (factory, admin, _, paymentId, _) = await SetupAsync(
-            new VnPayTransactionQueryResult("24", "Transaction declined", "778899", "02", 20000));
+        var fake = new FakeQueryClient(new VnPayTransactionQueryResult("24", "Transaction declined", "778899", "02", 20000));
+        using var factory = CreateReconcileFactory(fake);
+        var (admin, _, paymentId, _) = await SetupAsync(
+            factory, fake, new VnPayTransactionQueryResult("24", "Transaction declined", "778899", "02", 20000));
 
         using var response = await admin.PostAsync($"/api/admin/payments/{paymentId}/reconcile", null);
 
@@ -53,8 +57,10 @@ public sealed class AdminPaymentReconcileEndpointTests(PostgresDatabaseFixture f
     [Fact]
     public async Task Reconcile_reports_amount_mismatches_without_applying()
     {
-        var (factory, admin, _, paymentId, bookingId) = await SetupAsync(
-            new VnPayTransactionQueryResult("00", "Confirm Success", "778899", "00", 20000 + 500));
+        var fake = new FakeQueryClient(new VnPayTransactionQueryResult("00", "Confirm Success", "778899", "00", 20000 + 500));
+        using var factory = CreateReconcileFactory(fake);
+        var (admin, _, paymentId, bookingId) = await SetupAsync(
+            factory, fake, new VnPayTransactionQueryResult("00", "Confirm Success", "778899", "00", 20000 + 500));
 
         using var response = await admin.PostAsync($"/api/admin/payments/{paymentId}/reconcile", null);
 
@@ -69,8 +75,9 @@ public sealed class AdminPaymentReconcileEndpointTests(PostgresDatabaseFixture f
     [Fact]
     public async Task Reconcile_replays_report_the_recorded_outcome()
     {
-        var (factory, admin, fake, paymentId, _) = await SetupAsync(
-            new VnPayTransactionQueryResult("00", "Confirm Success", "778899", "00", 20000));
+        var fake = new FakeQueryClient(new VnPayTransactionQueryResult("00", "Confirm Success", "778899", "00", 20000));
+        using var factory = CreateReconcileFactory(fake);
+        var (admin, _, paymentId, _) = await SetupAsync(factory, fake, new VnPayTransactionQueryResult("00", "Confirm Success", "778899", "00", 20000));
         using var first = await admin.PostAsync($"/api/admin/payments/{paymentId}/reconcile", null);
         Assert.Equal(HttpStatusCode.OK, first.StatusCode);
 
@@ -82,10 +89,65 @@ public sealed class AdminPaymentReconcileEndpointTests(PostgresDatabaseFixture f
     }
 
     [Fact]
+    public async Task Admin_records_the_manual_refund_for_a_reviewed_payment()
+    {
+        var fake = new FakeQueryClient(new VnPayTransactionQueryResult("00", "Confirm Success", "778899", "00", 20000));
+        using var factory = CreateReconcileFactory(fake);
+        var (admin, _, paymentId, _) = await SetupAsync(
+            factory, fake, new VnPayTransactionQueryResult("00", "Confirm Success", "778899", "00", 20000));
+        await using (var db = fixture.CreateDbContext())
+        {
+            var payment = await db.Payments.FindAsync(paymentId);
+            payment!.SetPaymentUrl("https://payment.example.test/x", DateTime.UtcNow);
+            payment.MarkSucceeded(DateTime.UtcNow, Guid.NewGuid().ToString("N")[..16], "00", "00", PaymentProcessingStatus.RequiresRefundReview);
+            await db.SaveChangesAsync();
+        }
+
+        using var missing = await admin.PostAsJsonAsync($"/api/admin/payments/{Guid.NewGuid()}/record-refund",
+            new RecordRefundRequest("BANK-REF-1", "Returned to source card"));
+        Assert.Equal(HttpStatusCode.NotFound, missing.StatusCode);
+
+        using var response = await admin.PostAsJsonAsync($"/api/admin/payments/{paymentId}/record-refund",
+            new RecordRefundRequest("BANK-REF-1", "Returned to source card"));
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var view = (await response.Content.ReadFromJsonAsync<AdminPaymentView>())!;
+        Assert.Equal(PaymentProcessingStatus.RefundRecorded.ToString(), view.Payment.ProcessingStatus);
+
+        await using var verify = fixture.CreateDbContext();
+        var stored = await verify.Payments.SingleAsync(x => x.Id == paymentId);
+        Assert.Equal("BANK-REF-1", stored.RefundReference);
+        Assert.Equal("Returned to source card", stored.RefundNote);
+        Assert.NotNull(stored.RefundRecordedAtUtc);
+        Assert.NotNull(stored.RefundRecordedByUserId);
+
+        using var repeated = await admin.PostAsJsonAsync($"/api/admin/payments/{paymentId}/record-refund",
+            new RecordRefundRequest("BANK-REF-2", null));
+        Assert.Equal(HttpStatusCode.Conflict, repeated.StatusCode);
+
+        var (pendingMovie, _, pendingRoom) = await DatabaseTestData.CreateBaseAsync(verify);
+        var pendingShowtime = await DatabaseTestData.CreateShowtimeAsync(verify, pendingMovie.Id, pendingRoom.Id);
+        var pendingBooking = await DatabaseTestData.CreateBookingAsync(verify, pendingShowtime.Id);
+        var pendingPayment = new Payment(Guid.NewGuid(), pendingBooking.Id, Guid.NewGuid(), $"REF-{Guid.NewGuid():N}", 200, "VND",
+            DateTime.UtcNow.AddMinutes(5), DateTime.UtcNow);
+        pendingPayment.SetPaymentUrl("https://payment.example.test/z", DateTime.UtcNow);
+        verify.Payments.Add(pendingPayment);
+        await verify.SaveChangesAsync();
+        using var pendingRefund = await admin.PostAsJsonAsync($"/api/admin/payments/{pendingPayment.Id}/record-refund",
+            new RecordRefundRequest("BANK-REF-3", null));
+        Assert.Equal(HttpStatusCode.Conflict, pendingRefund.StatusCode);
+
+        using var noReference = await admin.PostAsJsonAsync($"/api/admin/payments/{paymentId}/record-refund",
+            new RecordRefundRequest(" ", null));
+        Assert.Equal(HttpStatusCode.BadRequest, noReference.StatusCode);
+    }
+
+    [Fact]
     public async Task Admin_payment_queries_list_and_filter_transactions()
     {
-        var (factory, admin, _, pendingId, bookingId) = await SetupAsync(
-            new VnPayTransactionQueryResult("00", "Confirm Success", "778899", "00", 20000));
+        var fake = new FakeQueryClient(new VnPayTransactionQueryResult("00", "Confirm Success", "778899", "00", 20000));
+        using var factory = CreateReconcileFactory(fake);
+        var (admin, _, pendingId, bookingId) = await SetupAsync(
+            factory, fake, new VnPayTransactionQueryResult("00", "Confirm Success", "778899", "00", 20000));
         await using (var db = fixture.CreateDbContext())
         {
             // A reviewed transaction to filter for.
@@ -100,7 +162,7 @@ public sealed class AdminPaymentReconcileEndpointTests(PostgresDatabaseFixture f
             await db.SaveChangesAsync();
         }
 
-        using var list = await admin.GetAsync("/api/admin/payments?processingStatus=RequiresRefundReview");
+        using var list = await admin.GetAsync($"/api/admin/payments?processingStatus=RequiresRefundReview&bookingId={bookingId}");
         Assert.Equal(HttpStatusCode.OK, list.StatusCode);
         Assert.True(list.Headers.CacheControl?.NoStore);
         var reviewedPage = (await list.Content.ReadFromJsonAsync<PagedResult<AdminPaymentView>>())!;
@@ -124,7 +186,8 @@ public sealed class AdminPaymentReconcileEndpointTests(PostgresDatabaseFixture f
         using var missing = await admin.GetAsync($"/api/admin/payments/{Guid.NewGuid()}");
         Assert.Equal(HttpStatusCode.NotFound, missing.StatusCode);
 
-        var (customer, _) = await CreateClientAsync(factory, ["Customer"]);
+        var (customer, customerId) = await CreateClientAsync(factory, ["Customer"]);
+        _ = customerId;
         using var forbidden = await customer.GetAsync("/api/admin/payments");
         Assert.Equal(HttpStatusCode.Forbidden, forbidden.StatusCode);
         using var unauthorized = await factory.CreateClient().GetAsync("/api/admin/payments");
@@ -134,13 +197,15 @@ public sealed class AdminPaymentReconcileEndpointTests(PostgresDatabaseFixture f
     [Fact]
     public async Task Reconcile_requires_an_admin_and_a_known_payment()
     {
-        var (factory, admin, _, paymentId, _) = await SetupAsync(
-            new VnPayTransactionQueryResult("00", "Confirm Success", "778899", "00", 20000));
+        var fake = new FakeQueryClient(new VnPayTransactionQueryResult("00", "Confirm Success", "778899", "00", 20000));
+        using var factory = CreateReconcileFactory(fake);
+        var (admin, _, paymentId, _) = await SetupAsync(
+            factory, fake, new VnPayTransactionQueryResult("00", "Confirm Success", "778899", "00", 20000));
 
         using var anonymous = await factory.CreateClient().PostAsync($"/api/admin/payments/{paymentId}/reconcile", null);
         Assert.Equal(HttpStatusCode.Unauthorized, anonymous.StatusCode);
 
-        var (customer, _) = await CreateClientAsync(factory, ["Customer"]);
+        var (customer, customerId) = await CreateClientAsync(factory, ["Customer"]);
         using var forbidden = await customer.PostAsync($"/api/admin/payments/{paymentId}/reconcile", null);
         Assert.Equal(HttpStatusCode.Forbidden, forbidden.StatusCode);
 
@@ -148,15 +213,16 @@ public sealed class AdminPaymentReconcileEndpointTests(PostgresDatabaseFixture f
         Assert.Equal(HttpStatusCode.NotFound, missing.StatusCode);
     }
 
-    private async Task<(Microsoft.AspNetCore.Mvc.Testing.WebApplicationFactory<Program> Factory, HttpClient AdminClient, FakeQueryClient QueryClient, Guid PaymentId, Guid BookingId)> SetupAsync(
-        VnPayTransactionQueryResult result)
-    {
-        // Every test shares the collection database, so recorded VNPay transaction ids must not collide.
-        result = result with { TransactionNo = Guid.NewGuid().ToString("N")[..16] };
-        var fake = new FakeQueryClient(result);
-        var configured = new ApiWebApplicationFactory(connectionString: fixture.ConnectionString)
+    private Microsoft.AspNetCore.Mvc.Testing.WebApplicationFactory<Program> CreateReconcileFactory(FakeQueryClient fake) =>
+        new ApiWebApplicationFactory(connectionString: fixture.ConnectionString)
             .WithWebHostBuilder(builder => builder.ConfigureTestServices(services =>
                 services.Replace(ServiceDescriptor.Singleton<IVnPayTransactionQueryClient>(fake))));
+
+    private async Task<(HttpClient AdminClient, FakeQueryClient QueryClient, Guid PaymentId, Guid BookingId)> SetupAsync(
+        Microsoft.AspNetCore.Mvc.Testing.WebApplicationFactory<Program> factory, FakeQueryClient fake, VnPayTransactionQueryResult result)
+    {
+        // Every test shares the collection database, so recorded VNPay transaction ids must not collide.
+        fake.Result = result = result with { TransactionNo = Guid.NewGuid().ToString("N")[..16] };
 
         await using (var db = fixture.CreateDbContext())
         {
@@ -186,8 +252,8 @@ public sealed class AdminPaymentReconcileEndpointTests(PostgresDatabaseFixture f
             payment.SetPaymentUrl($"https://sandbox.vnpayment.vn/paymentv2/vpcpay.html?vnp_TxnRef={payment.MerchantReference}", now);
             db.Payments.Add(payment);
             await db.SaveChangesAsync();
-            var (admin, _) = await CreateClientAsync(configured, ["Admin"]);
-            return (configured, admin, fake, payment.Id, booking.Id);
+            var (admin, _) = await CreateClientAsync(factory, ["Admin"]);
+            return (admin, fake, payment.Id, booking.Id);
         }
     }
 
@@ -216,10 +282,12 @@ public sealed class AdminPaymentReconcileEndpointTests(PostgresDatabaseFixture f
     {
         public List<string> Queries { get; } = [];
 
+        public VnPayTransactionQueryResult Result { get; set; } = result;
+
         public Task<VnPayTransactionQueryResult> QueryAsync(string transactionReference, decimal amount, DateTime transactionDateUtc, CancellationToken cancellationToken)
         {
             Queries.Add(transactionReference);
-            return Task.FromResult(result);
+            return Task.FromResult(Result);
         }
     }
 }

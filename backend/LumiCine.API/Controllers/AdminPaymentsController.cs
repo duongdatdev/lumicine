@@ -1,3 +1,5 @@
+using System.IdentityModel.Tokens.Jwt;
+using System.Security.Claims;
 using LumiCine.Application.Accounts;
 using LumiCine.Application.Common;
 using LumiCine.Application.Payments;
@@ -24,8 +26,18 @@ public sealed class AdminPaymentsController(IPaymentService payments) : Controll
     public Task<AdminPaymentView> Get(Guid id, CancellationToken cancellationToken) =>
         payments.GetForAdminAsync(id, cancellationToken);
 
+    [HttpPost("{id:guid}/record-refund")]
+    [ProducesResponseType<AdminPaymentView>(StatusCodes.Status200OK)]
+    public async Task<IActionResult> RecordRefund(Guid id, RecordRefundRequest request, CancellationToken cancellationToken)
+    {
+        var view = await payments.RecordRefundAsync(AdminUserId, id, request, cancellationToken);
+        return Ok(view);
+    }
+
     [HttpPost("{id:guid}/reconcile")]
     [ProducesResponseType<VnPayReconcileResult>(StatusCodes.Status200OK)]
     public Task<VnPayReconcileResult> Reconcile(Guid id, CancellationToken cancellationToken) =>
         payments.ReconcileAsync(id, cancellationToken);
+
+    private Guid AdminUserId => Guid.Parse(User.FindFirstValue(JwtRegisteredClaimNames.Sub)!);
 }

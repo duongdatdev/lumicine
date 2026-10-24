@@ -102,4 +102,32 @@ public sealed class PaymentEntityTests
             currency,
             expiresAtUtc ?? Now.AddMinutes(5),
             createdAtUtc ?? Now);
+
+    [Fact]
+    public void Only_refund_review_payments_can_record_a_refund()
+    {
+        var now = DateTime.UtcNow;
+        var payment = NewPayment();
+        payment.SetPaymentUrl("https://payment.example.test/pay", now);
+        payment.MarkSucceeded(now, "1", "00", "00", PaymentProcessingStatus.RequiresRefundReview);
+
+        payment.RecordRefund(now.AddMinutes(5), Guid.NewGuid(), "BANK-REF-1", "Returned to card");
+
+        Assert.Equal(PaymentProcessingStatus.RefundRecorded, payment.ProcessingStatus);
+        Assert.Equal("BANK-REF-1", payment.RefundReference);
+        Assert.Equal("Returned to card", payment.RefundNote);
+        Assert.Equal(now.AddMinutes(5), payment.RefundRecordedAtUtc);
+        Assert.NotNull(payment.RefundRecordedByUserId);
+
+        var fulfilled = NewPayment();
+        fulfilled.MarkSucceeded(now, "2", "00", "00", PaymentProcessingStatus.Fulfilled);
+        Assert.Throws<InvalidOperationException>(() => fulfilled.RecordRefund(now, Guid.NewGuid(), "BANK-REF-2", null));
+
+        var pending = NewPayment();
+        Assert.Throws<InvalidOperationException>(() => pending.RecordRefund(now, Guid.NewGuid(), "BANK-REF-3", null));
+
+        Assert.Throws<ArgumentException>(() => NewPayment().RecordRefund(DateTime.Now, Guid.NewGuid(), "BANK-REF-4", null));
+        Assert.Throws<ArgumentOutOfRangeException>(() =>
+            NewPayment().RecordRefund(now, Guid.NewGuid(), new string('r', 201), null));
+    }
 }

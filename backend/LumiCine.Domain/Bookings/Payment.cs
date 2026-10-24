@@ -45,6 +45,10 @@ public sealed class Payment
     public string? ResponseCode { get; private set; }
     public string? TransactionStatus { get; private set; }
     public string? PaymentUrl { get; private set; }
+    public string? RefundReference { get; private set; }
+    public string? RefundNote { get; private set; }
+    public DateTime? RefundRecordedAtUtc { get; private set; }
+    public Guid? RefundRecordedByUserId { get; private set; }
     public DateTime CreatedAtUtc { get; private set; }
     public DateTime? ProcessedAtUtc { get; private set; }
     public DateTime? UpdatedAtUtc { get; private set; }
@@ -87,6 +91,22 @@ public sealed class Payment
         ResponseCode = OptionalText(responseCode, 16, nameof(responseCode));
         TransactionStatus = OptionalText(transactionStatus, 16, nameof(transactionStatus));
         ProcessedAtUtc = nowUtc;
+        UpdatedAtUtc = nowUtc;
+    }
+
+    public void RecordRefund(DateTime nowUtc, Guid recordedByUserId, string reference, string? note)
+    {
+        nowUtc = EntityGuard.Utc(nowUtc, nameof(nowUtc));
+        var validatedReference = EntityGuard.RequiredText(reference, 200, nameof(reference));
+        var validatedNote = note is null ? null : EntityGuard.OptionalText(note, 500, nameof(note));
+        if (ProcessingStatus != PaymentProcessingStatus.RequiresRefundReview)
+            throw new InvalidOperationException("Only payments flagged for refund review can record a refund.");
+
+        RefundReference = validatedReference;
+        RefundNote = validatedNote;
+        RefundRecordedAtUtc = nowUtc;
+        RefundRecordedByUserId = EntityGuard.Id(recordedByUserId, nameof(recordedByUserId));
+        ProcessingStatus = PaymentProcessingStatus.RefundRecorded;
         UpdatedAtUtc = nowUtc;
     }
 
