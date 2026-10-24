@@ -41,14 +41,16 @@ public sealed partial class ShowtimeServiceTests
         var now = DateTime.UtcNow;
         var showtime = await new ShowtimeService(db, TimeProvider.System).CreateAsync(
             new(movie.Id, room.Id, DateTimeOffset.UtcNow.AddDays(18).ToString("O"), 90), default);
+        // The hold is still due by the real clock, so the expiration worker cannot reap it;
+        // the snapshot service sees it as expired through its fixed clock instead.
         var owner = new Booking(Guid.NewGuid(), $"LC{Guid.NewGuid():N}", showtime.Id, 90,
-            now.AddMinutes(-6), holdExpiresAtUtc: now.AddMinutes(-1));
+            now.AddMinutes(-6), holdExpiresAtUtc: now.AddMinutes(5));
         db.Bookings.Add(owner);
         var showtimeSeat = await db.ShowtimeSeats.SingleAsync(x => x.ShowtimeId == showtime.Id && x.SeatId == seat.Id);
         showtimeSeat.Hold(owner.Id);
         await db.SaveChangesAsync();
 
-        var service = new ShowtimeService(db, new SeatAvailabilityFixedClock(new DateTimeOffset(now, TimeSpan.Zero)));
+        var service = new ShowtimeService(db, new SeatAvailabilityFixedClock(new DateTimeOffset(now.AddMinutes(6), TimeSpan.Zero)));
         var publicSeat = Assert.Single(Assert.IsAssignableFrom<IReadOnlyList<ShowtimeSeatSummary>>(
             await service.GetSeatsAsync(showtime.Id, false, default)));
         var managementSeat = Assert.Single(Assert.IsAssignableFrom<IReadOnlyList<ShowtimeSeatSummary>>(

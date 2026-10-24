@@ -12,20 +12,24 @@ using LumiCine.IntegrationTests.Persistence;
 using LumiCine.Infrastructure.Identity;
 using LumiCine.Infrastructure.Persistence;
 using MailKit.Security;
+using Microsoft.AspNetCore.TestHost;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using MimeKit;
 
 namespace LumiCine.IntegrationTests.Email;
 
-[Collection(PostgresDatabaseCollection.Name)]
+[Collection(WorkerEmailDatabaseCollection.Name)]
 public sealed class TicketEmailQueueTests(PostgresDatabaseFixture fixture)
 {
     [Fact]
     public async Task Composer_builds_html_and_plain_body_with_inline_qr_images()
     {
-        using var factory = new ApiWebApplicationFactory(connectionString: fixture.ConnectionString);
+        using var factory = new ApiWebApplicationFactory(connectionString: fixture.ConnectionString)
+            .WithWebHostBuilder(builder => builder.ConfigureTestServices(services =>
+                services.RemoveAll<Microsoft.Extensions.Hosting.IHostedService>()));
         using var scope = factory.Services.CreateScope();
         var composer = scope.ServiceProvider.GetRequiredService<ITicketEmailComposer>();
         await using var db = fixture.CreateDbContext();
@@ -52,7 +56,9 @@ public sealed class TicketEmailQueueTests(PostgresDatabaseFixture fixture)
     public async Task Smtp_delivers_the_ticket_email_as_multipart_with_inline_images()
     {
         await using var server = new FakeSmtpServer();
-        using var factory = new ApiWebApplicationFactory(connectionString: fixture.ConnectionString);
+        using var factory = new ApiWebApplicationFactory(connectionString: fixture.ConnectionString)
+            .WithWebHostBuilder(builder => builder.ConfigureTestServices(services =>
+                services.RemoveAll<Microsoft.Extensions.Hosting.IHostedService>()));
         using var scope = factory.Services.CreateScope();
         var composer = scope.ServiceProvider.GetRequiredService<ITicketEmailComposer>();
         var sender = new SmtpEmailSender(new EmailOptions
@@ -81,7 +87,9 @@ public sealed class TicketEmailQueueTests(PostgresDatabaseFixture fixture)
     [Fact]
     public async Task Claims_lease_rows_once_and_completing_marks_them_sent()
     {
-        using var factory = new ApiWebApplicationFactory(connectionString: fixture.ConnectionString);
+        using var factory = new ApiWebApplicationFactory(connectionString: fixture.ConnectionString)
+            .WithWebHostBuilder(builder => builder.ConfigureTestServices(services =>
+                services.RemoveAll<Microsoft.Extensions.Hosting.IHostedService>()));
         using var scope = factory.Services.CreateScope();
         var service = scope.ServiceProvider.GetRequiredService<ITicketEmailDeliveryService>();
         await using var db = fixture.CreateDbContext();
@@ -109,7 +117,9 @@ public sealed class TicketEmailQueueTests(PostgresDatabaseFixture fixture)
     [Fact]
     public async Task Expired_leases_are_reclaimed_and_retries_clear_the_lease()
     {
-        using var factory = new ApiWebApplicationFactory(connectionString: fixture.ConnectionString);
+        using var factory = new ApiWebApplicationFactory(connectionString: fixture.ConnectionString)
+            .WithWebHostBuilder(builder => builder.ConfigureTestServices(services =>
+                services.RemoveAll<Microsoft.Extensions.Hosting.IHostedService>()));
         using var scope = factory.Services.CreateScope();
         var service = scope.ServiceProvider.GetRequiredService<ITicketEmailDeliveryService>();
         await using var db = fixture.CreateDbContext();
@@ -142,7 +152,9 @@ public sealed class TicketEmailQueueTests(PostgresDatabaseFixture fixture)
     [Fact]
     public async Task Enqueue_resets_a_pending_delivery_or_creates_a_fresh_one()
     {
-        using var factory = new ApiWebApplicationFactory(connectionString: fixture.ConnectionString);
+        using var factory = new ApiWebApplicationFactory(connectionString: fixture.ConnectionString)
+            .WithWebHostBuilder(builder => builder.ConfigureTestServices(services =>
+                services.RemoveAll<Microsoft.Extensions.Hosting.IHostedService>()));
         using var scope = factory.Services.CreateScope();
         var service = scope.ServiceProvider.GetRequiredService<ITicketEmailDeliveryService>();
         await using var db = fixture.CreateDbContext();

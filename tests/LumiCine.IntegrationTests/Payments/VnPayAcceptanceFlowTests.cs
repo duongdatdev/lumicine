@@ -178,7 +178,8 @@ public sealed class VnPayAcceptanceFlowTests(PostgresDatabaseFixture fixture)
         Assert.Equal(PaymentProcessingStatus.RefundRecorded.ToString(), recorded.Items.Single().Payment.ProcessingStatus);
         await using var verify = fixture.CreateDbContext();
         Assert.Equal("SANDBOX-REFUND-1", (await verify.Payments.SingleAsync(x => x.Id == payment.Id)).RefundReference);
-        Assert.Equal(0, await verify.Tickets.CountAsync());
+        var lateItemIds = await verify.BookingItems.Where(x => x.BookingId == booking.Id).Select(x => x.Id).ToListAsync();
+        Assert.Equal(0, await verify.Tickets.CountAsync(x => lateItemIds.Contains(x.BookingItemId)));
         // Cancellation audit: the booking stays cancelled.
         Assert.Equal(BookingStatus.Cancelled, (await verify.Bookings.SingleAsync(x => x.Id == booking.Id)).Status);
     }

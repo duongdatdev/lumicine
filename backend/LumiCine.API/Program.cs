@@ -96,7 +96,8 @@ if (seedMode == SeedMode.None)
     if (!string.IsNullOrWhiteSpace(builder.Configuration.GetConnectionString("LumiCine")))
     {
         builder.Services.AddHostedService<BookingExpirationWorker>();
-        builder.Services.AddHostedService<TicketEmailWorker>();
+        builder.Services.AddSingleton<TicketEmailWorker>();
+        builder.Services.AddHostedService(sp => sp.GetRequiredService<TicketEmailWorker>());
     }
 }
 else

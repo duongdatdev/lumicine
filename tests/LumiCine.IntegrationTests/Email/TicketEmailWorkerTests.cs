@@ -17,7 +17,7 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace LumiCine.IntegrationTests.Email;
 
-[Collection(PostgresDatabaseCollection.Name)]
+[Collection(WorkerEmailDatabaseCollection.Name)]
 public sealed class TicketEmailWorkerTests(PostgresDatabaseFixture fixture)
 {
     [Fact]
@@ -30,12 +30,12 @@ public sealed class TicketEmailWorkerTests(PostgresDatabaseFixture fixture)
         await db.TicketEmailDeliveries.ExecuteDeleteAsync();
         var (deliveryId, email) = await InsertFulfilledBookingAsync(db);
 
-        await WaitForDeliveryStatusAsync(db, deliveryId, TicketEmailDeliveryStatus.Sent, TimeSpan.FromSeconds(45));
+        using (var scope = factory.Services.CreateScope())
+        {
+            await scope.ServiceProvider.GetRequiredService<LumiCine.Infrastructure.Bookings.TicketEmailWorker>()
+                .ProcessDueDeliveriesAsync(20, CancellationToken.None);
+        }
 
-        // The SMTP completion lands when the worker's DATA round trip finishes.
-        using var smtpTimeout = new CancellationTokenSource(TimeSpan.FromSeconds(30));
-        while (server.Messages.Count == 0)
-            await Task.Delay(200, smtpTimeout.Token);
         var message = MimeKit.MimeMessage.Load(new MemoryStream(Encoding.UTF8.GetBytes(await server.Messages[0].Task)));
         Assert.Equal(email, message.To.Mailboxes.Single().Address);
         Assert.NotNull(message.HtmlBody);
@@ -71,21 +71,26 @@ public sealed class TicketEmailWorkerTests(PostgresDatabaseFixture fixture)
         await using var db = fixture.CreateDbContext();
         await db.TicketEmailDeliveries.ExecuteDeleteAsync();
         var (deliveryId, _) = await InsertFulfilledBookingAsync(db);
-        // The worker parks on a clock-based delay after each pass; advancing the clock lets it run again.
-        clock.Advance(TimeSpan.FromSeconds(2));
-        deliveryId = await WaitForAttemptCountAsync(db, deliveryId, 1);
+        // The mutable clock froze before the row existed; catch it up to the real time.
+        clock.Advance(DateTime.UtcNow - clock.GetUtcNow() + TimeSpan.FromSeconds(1));
 
-        var expectedDelays = new[] { 1, 5, 15, 60 };
-        var attempt = 1;
-        while (attempt < 5)
+        using (var scope = factory.Services.CreateScope())
         {
-            var stored = await db.TicketEmailDeliveries.AsNoTracking().SingleAsync(x => x.Id == deliveryId);
-            Assert.Equal(attempt, stored.AttemptCount);
-            Assert.Equal(TicketEmailDeliveryStatus.Pending, stored.Status);
-            Assert.Equal(expectedDelays[attempt - 1], (int)((stored.NextAttemptAtUtc!.Value - clock.GetUtcNow().UtcDateTime).TotalMinutes + 0.5));
-            clock.Advance(stored.NextAttemptAtUtc!.Value.AddSeconds(1) - clock.GetUtcNow());
-            await WaitForAttemptCountAsync(db, deliveryId, attempt + 1);
-            attempt++;
+            var worker = scope.ServiceProvider.GetRequiredService<LumiCine.Infrastructure.Bookings.TicketEmailWorker>();
+            var expectedDelays = new[] { 1, 5, 15, 60 };
+            for (var attempt = 1; attempt <= 5; attempt++)
+            {
+                await worker.ProcessDueDeliveriesAsync(20, CancellationToken.None);
+                var stored = await db.TicketEmailDeliveries.AsNoTracking().SingleAsync(x => x.Id == deliveryId);
+                Assert.Equal(attempt, stored.AttemptCount);
+                if (attempt < 5)
+                {
+                    Assert.Equal(TicketEmailDeliveryStatus.Pending, stored.Status);
+                    Assert.Equal(expectedDelays[attempt - 1],
+                        (int)((stored.NextAttemptAtUtc!.Value - clock.GetUtcNow().UtcDateTime).TotalMinutes + 0.5));
+                    clock.Advance(stored.NextAttemptAtUtc!.Value.AddSeconds(1) - clock.GetUtcNow());
+                }
+            }
         }
 
         foreach (var entry in logs.Entries.Take(6))
