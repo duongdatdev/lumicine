@@ -229,6 +229,70 @@ public sealed class PaymentService(
         }
     }
 
+    public async Task<PagedResult<AdminPaymentView>> ListForAdminAsync(AdminPaymentQuery query, CancellationToken ct)
+    {
+        var page = query.Paging.Validate();
+        var rows = db.Payments.AsNoTracking().AsQueryable();
+        if (query.BookingId is Guid bookingId)
+            rows = rows.Where(x => x.BookingId == bookingId);
+        if (!string.IsNullOrWhiteSpace(query.Status))
+        {
+            if (!Enum.TryParse<PaymentStatus>(query.Status, true, out var status) ||
+                !string.Equals(query.Status.Trim(), status.ToString(), StringComparison.OrdinalIgnoreCase) ||
+                !Enum.IsDefined(status))
+                throw new ApiException(400, "Status filter is invalid.");
+            rows = rows.Where(x => x.Status == status);
+        }
+        if (!string.IsNullOrWhiteSpace(query.ProcessingStatus))
+        {
+            if (!Enum.TryParse<PaymentProcessingStatus>(query.ProcessingStatus, true, out var processing) ||
+                !string.Equals(query.ProcessingStatus.Trim(), processing.ToString(), StringComparison.OrdinalIgnoreCase) ||
+                !Enum.IsDefined(processing))
+                throw new ApiException(400, "Processing status filter is invalid.");
+            rows = rows.Where(x => x.ProcessingStatus == processing);
+        }
+
+        var total = await rows.CountAsync(ct);
+        var offset = page.Offset;
+        if (offset > int.MaxValue) throw new ApiException(400, "Page is too large.");
+        var payments = await rows.OrderByDescending(x => x.CreatedAtUtc).ThenBy(x => x.Id)
+            .Skip((int)offset).Take(page.PageSize).ToListAsync(ct);
+        var bookings = await DescribeBookingsAsync(payments.Select(x => x.BookingId).Distinct().ToList(), ct);
+        var items = payments.Select(payment => ToAdminView(payment, bookings)).ToArray();
+        return new(items, total, page.Page, page.PageSize);
+    }
+
+    public async Task<AdminPaymentView> GetForAdminAsync(Guid paymentId, CancellationToken ct)
+    {
+        var payment = await db.Payments.AsNoTracking().SingleOrDefaultAsync(x => x.Id == paymentId, ct)
+            ?? throw new ApiException(404, "Payment was not found.");
+        var bookings = await DescribeBookingsAsync([payment.BookingId], ct);
+        return ToAdminView(payment, bookings);
+    }
+
+    private async Task<IReadOnlyDictionary<Guid, (string Code, string? Email)>> DescribeBookingsAsync(IReadOnlyList<Guid> bookingIds, CancellationToken ct)
+    {
+        if (bookingIds.Count == 0)
+            return new Dictionary<Guid, (string, string?)>();
+        var bookings = await db.Bookings.AsNoTracking()
+            .Where(x => bookingIds.Contains(x.Id))
+            .Select(x => new { x.Id, x.Code, x.UserId })
+            .ToDictionaryAsync(x => x.Id, x => (x.Code, x.UserId));
+        var userIds = bookings.Values.Where(x => x.UserId is Guid).Select(x => x.UserId!.Value).Distinct().ToList();
+        var emails = userIds.Count == 0
+            ? new Dictionary<Guid, string>()
+            : await db.Users.AsNoTracking().Where(x => userIds.Contains(x.Id)).ToDictionaryAsync(x => x.Id, x => x.Email);
+        return bookings.ToDictionary(
+            x => x.Key,
+            x => (x.Value.Code, x.Value.UserId is Guid id ? emails.GetValueOrDefault(id) : null));
+    }
+
+    private static AdminPaymentView ToAdminView(Payment payment, IReadOnlyDictionary<Guid, (string Code, string? Email)> bookings)
+    {
+        var booking = bookings.GetValueOrDefault(payment.BookingId);
+        return new AdminPaymentView(ToView(payment), booking.Code, booking.Email);
+    }
+
     private static PaymentView ToView(Payment payment) => new(
         payment.Id, payment.BookingId, payment.RequestId, payment.MerchantReference, payment.Amount,
         payment.Currency, payment.Status.ToString(), payment.ProcessingStatus.ToString(), payment.PaymentUrl,

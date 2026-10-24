@@ -2,6 +2,7 @@ using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using LumiCine.Application.Accounts;
+using LumiCine.Application.Common;
 using LumiCine.Application.Payments;
 using LumiCine.Domain.Bookings;
 using LumiCine.Infrastructure.Authentication;
@@ -81,6 +82,56 @@ public sealed class AdminPaymentReconcileEndpointTests(PostgresDatabaseFixture f
     }
 
     [Fact]
+    public async Task Admin_payment_queries_list_and_filter_transactions()
+    {
+        var (factory, admin, _, pendingId, bookingId) = await SetupAsync(
+            new VnPayTransactionQueryResult("00", "Confirm Success", "778899", "00", 20000));
+        await using (var db = fixture.CreateDbContext())
+        {
+            // A reviewed transaction to filter for.
+            var reviewed = await db.Payments.FindAsync(pendingId);
+            reviewed!.SetPaymentUrl("https://payment.example.test/x", DateTime.UtcNow);
+            reviewed.MarkSucceeded(DateTime.UtcNow, Guid.NewGuid().ToString("N")[..16], "00", "00", PaymentProcessingStatus.RequiresRefundReview);
+            var failed = new Payment(Guid.NewGuid(), reviewed.BookingId, Guid.NewGuid(), $"REF-{Guid.NewGuid():N}", 200, "VND",
+                DateTime.UtcNow.AddMinutes(5), DateTime.UtcNow);
+            failed.SetPaymentUrl("https://payment.example.test/y", DateTime.UtcNow);
+            failed.MarkFailed(DateTime.UtcNow, "24", "02");
+            db.Payments.Add(failed);
+            await db.SaveChangesAsync();
+        }
+
+        using var list = await admin.GetAsync("/api/admin/payments?processingStatus=RequiresRefundReview");
+        Assert.Equal(HttpStatusCode.OK, list.StatusCode);
+        Assert.True(list.Headers.CacheControl?.NoStore);
+        var reviewedPage = (await list.Content.ReadFromJsonAsync<PagedResult<AdminPaymentView>>())!;
+        Assert.Equal(1, reviewedPage.TotalCount); // the reviewed booking owns exactly one RequiresRefundReview payment
+        Assert.Equal(PaymentProcessingStatus.RequiresRefundReview.ToString(), reviewedPage.Items.Single().Payment.ProcessingStatus);
+        Assert.NotEqual(string.Empty, reviewedPage.Items.Single().BookingCode);
+        Assert.Contains("@example.com", reviewedPage.Items.Single().CustomerEmail);
+
+        using var bookingFilter = await admin.GetAsync($"/api/admin/payments?status=Failed&bookingId={bookingId}");
+        var failedPage = (await bookingFilter.Content.ReadFromJsonAsync<PagedResult<AdminPaymentView>>())!;
+        Assert.Equal(1, failedPage.TotalCount);
+        Assert.Equal(PaymentStatus.Failed.ToString(), failedPage.Items.Single().Payment.Status);
+
+        using var invalid = await admin.GetAsync("/api/admin/payments?status=Bogus");
+        Assert.Equal(HttpStatusCode.BadRequest, invalid.StatusCode);
+
+        using var detail = await admin.GetAsync($"/api/admin/payments/{pendingId}");
+        Assert.Equal(HttpStatusCode.OK, detail.StatusCode);
+        var view = (await detail.Content.ReadFromJsonAsync<AdminPaymentView>())!;
+        Assert.Equal(pendingId, view.Payment.Id);
+        using var missing = await admin.GetAsync($"/api/admin/payments/{Guid.NewGuid()}");
+        Assert.Equal(HttpStatusCode.NotFound, missing.StatusCode);
+
+        var (customer, _) = await CreateClientAsync(factory, ["Customer"]);
+        using var forbidden = await customer.GetAsync("/api/admin/payments");
+        Assert.Equal(HttpStatusCode.Forbidden, forbidden.StatusCode);
+        using var unauthorized = await factory.CreateClient().GetAsync("/api/admin/payments");
+        Assert.Equal(HttpStatusCode.Unauthorized, unauthorized.StatusCode);
+    }
+
+    [Fact]
     public async Task Reconcile_requires_an_admin_and_a_known_payment()
     {
         var (factory, admin, _, paymentId, _) = await SetupAsync(
@@ -112,8 +163,15 @@ public sealed class AdminPaymentReconcileEndpointTests(PostgresDatabaseFixture f
             var (movie, _, room) = await DatabaseTestData.CreateBaseAsync(db);
             var showtime = await DatabaseTestData.CreateShowtimeAsync(db, movie.Id, room.Id);
             var now = DateTime.UtcNow;
+            var customerId = Guid.NewGuid();
+            var customerEmail = $"{customerId:N}@example.com";
+            db.Users.Add(new LumiCine.Infrastructure.Identity.ApplicationUser
+            {
+                Id = customerId, Email = customerEmail, NormalizedEmail = customerEmail.ToUpperInvariant(),
+                EmailConfirmed = true, IsActive = true, DisplayName = "Review test"
+            });
             var booking = new LumiCine.Domain.Bookings.Booking(Guid.NewGuid(), $"LC{Guid.NewGuid():N}", showtime.Id, 200, now,
-                holdExpiresAtUtc: now.AddMinutes(5));
+                holdExpiresAtUtc: now.AddMinutes(5), userId: customerId, requestId: Guid.NewGuid());
             db.Bookings.Add(booking);
             for (var i = 0; i < 2; i++)
             {
