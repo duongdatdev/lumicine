@@ -137,6 +137,10 @@ public sealed record DiscoveryFilters
 
     public string Serialize() => JsonSerializer.Serialize(this, StorageOptions);
 
+    public DiscoveryFiltersView ToView() => new(
+        TopicText, MovieNameText, GenreSlugs, MaxDurationMinutes, City, CinemaName,
+        DateFrom, DateTo, TimeWindowStartMinutes, TimeWindowEndMinutes, MaxPrice, MinSeats);
+
     public static DiscoveryFilters Parse(string? json)
     {
         if (string.IsNullOrWhiteSpace(json)) return Empty();

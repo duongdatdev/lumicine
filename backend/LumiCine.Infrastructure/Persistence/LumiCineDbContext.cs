@@ -1,6 +1,7 @@
 using LumiCine.Domain.Bookings;
 using LumiCine.Domain.Catalog;
 using LumiCine.Domain.Cinemas;
+using LumiCine.Domain.Discovery;
 using LumiCine.Domain.Scheduling;
 using LumiCine.Application.Accounts;
 using LumiCine.Infrastructure.Identity;
@@ -30,6 +31,8 @@ public sealed class LumiCineDbContext(DbContextOptions<LumiCineDbContext> option
     public DbSet<CheckInLog> CheckInLogs => Set<CheckInLog>();
     public DbSet<AuthSession> AuthSessions => Set<AuthSession>();
     public DbSet<RefreshToken> RefreshTokens => Set<RefreshToken>();
+    public DbSet<DiscoveryConversation> DiscoveryConversations => Set<DiscoveryConversation>();
+    public DbSet<DiscoveryMessage> DiscoveryMessages => Set<DiscoveryMessage>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

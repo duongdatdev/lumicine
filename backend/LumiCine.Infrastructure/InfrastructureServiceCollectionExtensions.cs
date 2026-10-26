@@ -13,6 +13,8 @@ using LumiCine.Application.Catalog;
 using LumiCine.Infrastructure.Catalog;
 using LumiCine.Application.Cinemas;
 using LumiCine.Infrastructure.Cinemas;
+using LumiCine.Application.Discovery;
+using LumiCine.Infrastructure.Discovery;
 using LumiCine.Infrastructure.Seeding;
 using LumiCine.Application.Media;
 using LumiCine.Infrastructure.Media;
@@ -65,6 +67,11 @@ public static class InfrastructureServiceCollectionExtensions
         services.AddScoped<ICinemaService, CinemaService>();
         services.AddScoped<DemoSeeder>();
         services.AddScoped<IPosterService, LocalPosterService>();
+        services.AddOptions<DiscoveryConversationOptions>()
+            .Bind(configuration.GetSection(DiscoveryConversationOptions.SectionName))
+            .ValidateDataAnnotations()
+            .ValidateOnStart();
+        services.AddScoped<IDiscoveryConversationService, DiscoveryConversationService>();
 
         services.AddIdentityCore<ApplicationUser>(options =>
             {

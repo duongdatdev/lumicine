@@ -627,6 +627,101 @@ namespace LumiCine.Infrastructure.Persistence.Migrations
                         });
                 });
 
+            modelBuilder.Entity("LumiCine.Domain.Discovery.DiscoveryConversation", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime>("CreatedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("FiltersJson")
+                        .IsRequired()
+                        .HasMaxLength(4000)
+                        .HasColumnType("character varying(4000)");
+
+                    b.Property<DateTime>("LastActiveAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("TurnCount")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime?>("UpdatedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid");
+
+                    b.Property<int>("Version")
+                        .HasColumnType("integer");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("UserId", "LastActiveAtUtc");
+
+                    b.ToTable("DiscoveryConversations", null, t =>
+                        {
+                            t.HasCheckConstraint("CK_DiscoveryConversations_Filters_NotBlank", "btrim(\"FiltersJson\") <> ''");
+
+                            t.HasCheckConstraint("CK_DiscoveryConversations_TurnCount", "\"TurnCount\" >= 0");
+
+                            t.HasCheckConstraint("CK_DiscoveryConversations_Version", "\"Version\" >= 1");
+                        });
+                });
+
+            modelBuilder.Entity("LumiCine.Domain.Discovery.DiscoveryMessage", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Content")
+                        .IsRequired()
+                        .HasMaxLength(4000)
+                        .HasColumnType("character varying(4000)");
+
+                    b.Property<Guid>("ConversationId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime>("CreatedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("RequestId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("ResponseJson")
+                        .HasMaxLength(16000)
+                        .HasColumnType("character varying(16000)");
+
+                    b.Property<string>("Role")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
+
+                    b.Property<int>("TurnNumber")
+                        .HasColumnType("integer");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ConversationId", "RequestId")
+                        .IsUnique()
+                        .HasFilter("\"RequestId\" IS NOT NULL");
+
+                    b.HasIndex("ConversationId", "TurnNumber", "Role");
+
+                    b.ToTable("DiscoveryMessages", null, t =>
+                        {
+                            t.HasCheckConstraint("CK_DiscoveryMessages_RequestId_User", "\"RequestId\" IS NULL OR \"Role\" = 'User'");
+
+                            t.HasCheckConstraint("CK_DiscoveryMessages_ResponseJson_Assistant", "\"ResponseJson\" IS NULL OR \"Role\" = 'Assistant'");
+
+                            t.HasCheckConstraint("CK_DiscoveryMessages_Role", "\"Role\" IN ('User', 'Assistant')");
+
+                            t.HasCheckConstraint("CK_DiscoveryMessages_TurnNumber", "\"TurnNumber\" > 0");
+
+                            t.HasCheckConstraint("CK_DiscoveryMessages_UserContentLength", "\"Role\" <> 'User' OR Length(\"Content\") <= 1000");
+                        });
+                });
+
             modelBuilder.Entity("LumiCine.Domain.Scheduling.Showtime", b =>
                 {
                     b.Property<Guid>("Id")
@@ -1129,6 +1224,24 @@ namespace LumiCine.Infrastructure.Persistence.Migrations
                     b.HasOne("LumiCine.Domain.Cinemas.Room", null)
                         .WithMany()
                         .HasForeignKey("RoomId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("LumiCine.Domain.Discovery.DiscoveryConversation", b =>
+                {
+                    b.HasOne("LumiCine.Infrastructure.Identity.ApplicationUser", null)
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("LumiCine.Domain.Discovery.DiscoveryMessage", b =>
+                {
+                    b.HasOne("LumiCine.Domain.Discovery.DiscoveryConversation", null)
+                        .WithMany()
+                        .HasForeignKey("ConversationId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
                 });
