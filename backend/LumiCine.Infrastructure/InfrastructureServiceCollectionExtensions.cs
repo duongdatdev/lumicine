@@ -16,6 +16,9 @@ using LumiCine.Infrastructure.Cinemas;
 using LumiCine.Application.Discovery;
 using LumiCine.Infrastructure.Discovery;
 using LumiCine.Infrastructure.Seeding;
+using Google.GenAI;
+using Microsoft.Extensions.AI;
+using Microsoft.Extensions.Options;
 using LumiCine.Application.Media;
 using LumiCine.Infrastructure.Media;
 using Microsoft.AspNetCore.Identity;
@@ -71,6 +74,20 @@ public static class InfrastructureServiceCollectionExtensions
             .Bind(configuration.GetSection(DiscoveryConversationOptions.SectionName))
             .ValidateDataAnnotations()
             .ValidateOnStart();
+        // The Gemini key is provisioned per environment; without it discovery still works
+        // through keyword search, so the AI adapters are built lazily instead of failing startup.
+        services.AddOptions<GeminiOptions>()
+            .Bind(configuration.GetSection(GeminiOptions.SectionName));
+        services.AddSingleton<GeminiAiClients>(serviceProvider =>
+        {
+            var gemini = serviceProvider.GetRequiredService<IOptions<GeminiOptions>>().Value;
+            if (string.IsNullOrWhiteSpace(gemini.ApiKey))
+                return GeminiAiClients.Unconfigured;
+            var client = new Client(apiKey: gemini.ApiKey);
+            return new GeminiAiClients(
+                client.AsIChatClient(gemini.ChatModel),
+                client.AsIEmbeddingGenerator(gemini.EmbeddingModel, gemini.EmbeddingDimensions));
+        });
         services.AddScoped<IDiscoveryConversationService, DiscoveryConversationService>();
         services.AddScoped<IDiscoveryConversationTurnStore, DiscoveryConversationTurnStore>();
 
