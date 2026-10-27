@@ -80,3 +80,9 @@ public interface IDiscoveryIntentParser
 {
     Task<DiscoveryIntentParseResult> ParseAsync(DiscoveryIntentInput input, CancellationToken cancellationToken);
 }
+
+/// <summary>Validates parsed intent values against real catalog entities and merges them into filters.</summary>
+public interface IDiscoveryFilterResolver
+{
+    Task<DiscoveryFilterResolution> ResolveAsync(string filtersJson, ParsedDiscoveryIntent intent, CancellationToken cancellationToken);
+}
