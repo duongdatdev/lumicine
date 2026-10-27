@@ -72,6 +72,7 @@ public static class InfrastructureServiceCollectionExtensions
             .ValidateDataAnnotations()
             .ValidateOnStart();
         services.AddScoped<IDiscoveryConversationService, DiscoveryConversationService>();
+        services.AddScoped<IDiscoveryConversationTurnStore, DiscoveryConversationTurnStore>();
 
         services.AddIdentityCore<ApplicationUser>(options =>
             {

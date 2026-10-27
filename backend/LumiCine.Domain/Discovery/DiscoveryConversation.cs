@@ -31,8 +31,24 @@ public sealed class DiscoveryConversation
     public DateTime LastActiveAtUtc { get; private set; }
     public DateTime? UpdatedAtUtc { get; private set; }
 
-    /// <summary>Commits one completed turn: state snapshot, activity timestamp and version.</summary>
-    public void RecordTurn(string filtersJson, DateTime nowUtc)
+    /// <summary>
+    /// Opens a new turn: bumps version and turn count up-front so a second writer holding the
+    /// stale version loses before spending any AI budget. Filter state lands on completion.
+    /// </summary>
+    public void BeginTurn(DateTime nowUtc)
+    {
+        nowUtc = EntityGuard.Utc(nowUtc, nameof(nowUtc));
+        if (nowUtc < LastActiveAtUtc)
+            throw new InvalidOperationException("Conversation activity cannot move backwards in time.");
+
+        TurnCount++;
+        Version++;
+        LastActiveAtUtc = nowUtc;
+        UpdatedAtUtc = nowUtc;
+    }
+
+    /// <summary>Commits the turn's resulting filter snapshot without touching version or turn count.</summary>
+    public void CompleteTurn(string filtersJson, DateTime nowUtc)
     {
         filtersJson = EntityGuard.RequiredText(filtersJson, 4000, nameof(filtersJson));
         nowUtc = EntityGuard.Utc(nowUtc, nameof(nowUtc));
@@ -40,8 +56,6 @@ public sealed class DiscoveryConversation
             throw new InvalidOperationException("Conversation activity cannot move backwards in time.");
 
         FiltersJson = filtersJson;
-        TurnCount++;
-        Version++;
         LastActiveAtUtc = nowUtc;
         UpdatedAtUtc = nowUtc;
     }
