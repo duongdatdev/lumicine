@@ -90,6 +90,7 @@ public static class InfrastructureServiceCollectionExtensions
         });
         services.AddScoped<IDiscoveryConversationService, DiscoveryConversationService>();
         services.AddScoped<IDiscoveryConversationTurnStore, DiscoveryConversationTurnStore>();
+        services.AddScoped<IDiscoveryIntentParser, DiscoveryIntentParser>();
 
         services.AddIdentityCore<ApplicationUser>(options =>
             {
