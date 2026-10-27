@@ -488,6 +488,81 @@ namespace LumiCine.Infrastructure.Persistence.Migrations
                     b.ToTable("MovieGenres", (string)null);
                 });
 
+            modelBuilder.Entity("LumiCine.Domain.Catalog.MovieSearchDocument", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid");
+
+                    b.Property<int>("AttemptCount")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime>("CreatedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("DocumentText")
+                        .IsRequired()
+                        .HasMaxLength(4000)
+                        .HasColumnType("character varying(4000)");
+
+                    b.Property<int?>("EmbeddingDimensions")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("EmbeddingModelId")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<DateTime?>("IndexedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("LastError")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
+                    b.Property<DateTime?>("LeaseUntilUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid>("MovieId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime?>("NextAttemptAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("SourceHash")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
+
+                    b.Property<DateTime?>("UpdatedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.PrimitiveCollection<float[]>("Vector")
+                        .HasColumnType("real[]");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("MovieId")
+                        .IsUnique();
+
+                    b.HasIndex("Status", "NextAttemptAtUtc")
+                        .HasFilter("\"Status\" = 'Pending'");
+
+                    b.ToTable("MovieSearchDocuments", null, t =>
+                        {
+                            t.HasCheckConstraint("CK_MovieSearchDocuments_AttemptCount", "\"AttemptCount\" >= 0 AND \"AttemptCount\" <= 5");
+
+                            t.HasCheckConstraint("CK_MovieSearchDocuments_DocumentTextNotEmpty", "btrim(\"DocumentText\") <> ''");
+
+                            t.HasCheckConstraint("CK_MovieSearchDocuments_HashHex", "\"SourceHash\" ~ '^[0-9A-Fa-f]{64}$'");
+
+                            t.HasCheckConstraint("CK_MovieSearchDocuments_Status", "\"Status\" IN ('Pending', 'Indexed', 'Failed')");
+                        });
+                });
+
             modelBuilder.Entity("LumiCine.Domain.Cinemas.Cinema", b =>
                 {
                     b.Property<Guid>("Id")
@@ -1207,6 +1282,15 @@ namespace LumiCine.Infrastructure.Persistence.Migrations
                         .WithMany()
                         .HasForeignKey("MovieId")
                         .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("LumiCine.Domain.Catalog.MovieSearchDocument", b =>
+                {
+                    b.HasOne("LumiCine.Domain.Catalog.Movie", null)
+                        .WithMany()
+                        .HasForeignKey("MovieId")
+                        .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
                 });
 

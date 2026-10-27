@@ -1,4 +1,4 @@
-using LumiCine.Infrastructure.Persistence;
+﻿using LumiCine.Infrastructure.Persistence;
 using LumiCine.Infrastructure.Identity;
 using LumiCine.Infrastructure.Authentication;
 using LumiCine.Infrastructure.Payments;
@@ -92,6 +92,8 @@ public static class InfrastructureServiceCollectionExtensions
         services.AddScoped<IDiscoveryConversationTurnStore, DiscoveryConversationTurnStore>();
         services.AddScoped<IDiscoveryIntentParser, DiscoveryIntentParser>();
         services.AddScoped<IDiscoveryFilterResolver, DiscoveryFilterResolver>();
+        services.AddSingleton<IMovieSearchDocumentBuilder, MovieSearchDocumentBuilder>();
+        services.AddScoped<IMovieSearchDocumentService, MovieSearchDocumentService>();
 
         services.AddIdentityCore<ApplicationUser>(options =>
             {

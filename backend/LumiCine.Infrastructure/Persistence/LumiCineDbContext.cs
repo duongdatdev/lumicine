@@ -18,6 +18,7 @@ public sealed class LumiCineDbContext(DbContextOptions<LumiCineDbContext> option
     public DbSet<Movie> Movies => Set<Movie>();
     public DbSet<Genre> Genres => Set<Genre>();
     public DbSet<MovieGenre> MovieGenres => Set<MovieGenre>();
+    public DbSet<MovieSearchDocument> MovieSearchDocuments => Set<MovieSearchDocument>();
     public DbSet<Cinema> Cinemas => Set<Cinema>();
     public DbSet<Room> Rooms => Set<Room>();
     public DbSet<Seat> Seats => Set<Seat>();
