@@ -1,5 +1,6 @@
 using LumiCine.Application.Catalog;
 using LumiCine.Application.Common;
+using LumiCine.Application.Discovery;
 using LumiCine.Domain.Catalog;
 using LumiCine.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
@@ -7,7 +8,7 @@ using Npgsql;
 
 namespace LumiCine.Infrastructure.Catalog;
 
-public sealed class MovieCatalogService(LumiCineDbContext db, TimeProvider timeProvider) : IMovieCatalogService
+public sealed class MovieCatalogService(LumiCineDbContext db, TimeProvider timeProvider, IMovieSearchDocumentBuilder searchDocumentBuilder) : IMovieCatalogService
 {
     public async Task<PagedResult<MovieSummary>> BrowseAsync(PageQuery page, string? search, Guid? genreId, bool includeInactive, CancellationToken cancellationToken)
     {
@@ -58,6 +59,11 @@ public sealed class MovieCatalogService(LumiCineDbContext db, TimeProvider timeP
         var genre = await db.Genres.SingleOrDefaultAsync(g => g.Id == id, cancellationToken);
         if (genre is null) return null;
         genre.Update(name, slug);
+        // Renaming a genre changes the documents of every movie holding it; stage the upserts
+        // before the save so they commit atomically with the rename itself.
+        var affectedMovieIds = await db.MovieGenres.Where(mg => mg.GenreId == id).Select(mg => mg.MovieId).ToListAsync(cancellationToken);
+        foreach (var movieId in affectedMovieIds)
+            await UpsertSearchDocumentAsync(movieId, cancellationToken);
         await SaveGenreChangesAsync(cancellationToken);
         return new(genre.Id, genre.Name, genre.Slug);
     }
@@ -87,6 +93,8 @@ public sealed class MovieCatalogService(LumiCineDbContext db, TimeProvider timeP
         db.Movies.Add(movie);
         AddGenres(movie.Id, metadata.GenreIds, now);
         await db.SaveChangesAsync(cancellationToken);
+        await UpsertSearchDocumentAsync(movie.Id, cancellationToken);
+        await db.SaveChangesAsync(cancellationToken);
         await tx.CommitAsync(cancellationToken);
         return (await BrowseOne(movie.Id, true, cancellationToken))!;
     }
@@ -102,6 +110,8 @@ public sealed class MovieCatalogService(LumiCineDbContext db, TimeProvider timeP
             throw new ApiException(409, "Movie duration cannot change while scheduled showtimes remain.");
         movie.Update(metadata.Title, metadata.OriginalTitle, metadata.Synopsis, metadata.DurationMinutes, metadata.ReleaseDate, metadata.AgeRating, timeProvider.GetUtcNow().UtcDateTime);
         await ReplaceGenres(id, metadata.GenreIds, cancellationToken);
+        await db.SaveChangesAsync(cancellationToken);
+        await UpsertSearchDocumentAsync(id, cancellationToken);
         await db.SaveChangesAsync(cancellationToken);
         await tx.CommitAsync(cancellationToken);
         return await BrowseOne(id, true, cancellationToken);
@@ -127,6 +137,8 @@ public sealed class MovieCatalogService(LumiCineDbContext db, TimeProvider timeP
         if (await LockMovie(id, cancellationToken) is null) return false;
         await RequireGenres(genreIds, cancellationToken);
         await ReplaceGenres(id, genreIds, cancellationToken);
+        await db.SaveChangesAsync(cancellationToken);
+        await UpsertSearchDocumentAsync(id, cancellationToken);
         await db.SaveChangesAsync(cancellationToken);
         await tx.CommitAsync(cancellationToken);
         return true;
@@ -191,5 +203,24 @@ public sealed class MovieCatalogService(LumiCineDbContext db, TimeProvider timeP
         {
             throw new ApiException(409, "A genre with the same name or slug already exists.");
         }
+    }
+
+    // Stages (re)queueing the movie's search document from its current catalog state; the caller
+    // saves so the document change commits in the same transaction as the catalog mutation.
+    private async Task UpsertSearchDocumentAsync(Guid movieId, CancellationToken ct)
+    {
+        var movie = await db.Movies.SingleOrDefaultAsync(m => m.Id == movieId, ct);
+        if (movie is null) return;
+        var genres = await db.MovieGenres.Where(mg => mg.MovieId == movieId)
+            .Join(db.Genres, mg => mg.GenreId, g => g.Id, (mg, g) => g)
+            .OrderBy(g => g.Name).ThenBy(g => g.Id)
+            .ToListAsync(ct);
+        var genreNames = genres.Select(g => g.Name).ToList();
+        var text = searchDocumentBuilder.BuildDocumentText(movie.Title, movie.OriginalTitle, movie.Synopsis, genreNames);
+        var hash = searchDocumentBuilder.ComputeSourceHash(text);
+        var now = timeProvider.GetUtcNow().UtcDateTime;
+        var existing = await db.MovieSearchDocuments.SingleOrDefaultAsync(d => d.MovieId == movieId, ct);
+        if (existing is not null) existing.UpdateSource(text, hash, now);
+        else db.MovieSearchDocuments.Add(new MovieSearchDocument(Guid.NewGuid(), movieId, text, hash, now));
     }
 }

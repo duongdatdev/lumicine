@@ -12,7 +12,7 @@ public sealed class MovieQueriesServiceTests(PostgresDatabaseFixture database)
     public async Task Browsing_filters_case_insensitive_title_genre_and_inactive_movies_with_stable_pages()
     {
         await using var db = database.CreateDbContext();
-        var service = new MovieCatalogService(db, TimeProvider.System);
+        var service = DatabaseTestData.CreateCatalogService(db);
         var suffix = Guid.NewGuid().ToString("N");
         var term = $"Lumi-{suffix}";
         var genre = await service.CreateGenreAsync($"Drama-{suffix}", $"drama-{suffix}", default);

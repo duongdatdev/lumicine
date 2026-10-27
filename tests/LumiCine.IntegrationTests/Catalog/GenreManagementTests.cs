@@ -13,7 +13,7 @@ public sealed class GenreManagementTests(PostgresDatabaseFixture database)
     public async Task Genre_metadata_is_trimmed_slug_is_lowercase_and_missing_updates_return_null()
     {
         await using var db = database.CreateDbContext();
-        var service = new MovieCatalogService(db, TimeProvider.System);
+        var service = DatabaseTestData.CreateCatalogService(db);
         var suffix = Guid.NewGuid().ToString("N");
         var genre = await service.CreateGenreAsync($" Drama-{suffix} ", $"DRAMA-{suffix}", default);
 
@@ -30,22 +30,22 @@ public sealed class GenreManagementTests(PostgresDatabaseFixture database)
         var name = $"Drama-{Guid.NewGuid():N}";
         var slug = $"drama-{Guid.NewGuid():N}";
         await using (var db = database.CreateDbContext())
-            await new MovieCatalogService(db, TimeProvider.System).CreateGenreAsync(name, slug, default);
+            await DatabaseTestData.CreateCatalogService(db).CreateGenreAsync(name, slug, default);
 
         await using (var db = database.CreateDbContext())
             Assert.Equal(409, (await Assert.ThrowsAsync<ApiException>(() =>
-                new MovieCatalogService(db, TimeProvider.System).CreateGenreAsync(name, $"other-{Guid.NewGuid():N}", default))).StatusCode);
+                DatabaseTestData.CreateCatalogService(db).CreateGenreAsync(name, $"other-{Guid.NewGuid():N}", default))).StatusCode);
 
         await using (var db = database.CreateDbContext())
             Assert.Equal(409, (await Assert.ThrowsAsync<ApiException>(() =>
-                new MovieCatalogService(db, TimeProvider.System).CreateGenreAsync($"other-{Guid.NewGuid():N}", slug, default))).StatusCode);
+                DatabaseTestData.CreateCatalogService(db).CreateGenreAsync($"other-{Guid.NewGuid():N}", slug, default))).StatusCode);
     }
 
     [Fact]
     public async Task Assigned_genre_cannot_be_deleted_and_unused_genre_can_be_deleted()
     {
         await using var db = database.CreateDbContext();
-        var service = new MovieCatalogService(db, TimeProvider.System);
+        var service = DatabaseTestData.CreateCatalogService(db);
         var assignedGenre = await service.CreateGenreAsync($"Genre-{Guid.NewGuid():N}", $"genre-{Guid.NewGuid():N}", default);
         var movie = new Movie(Guid.NewGuid(), $"Movie-{Guid.NewGuid():N}", 90, DateTime.UtcNow);
         db.Movies.Add(movie);

@@ -12,7 +12,7 @@ public sealed class MovieGenreAssignmentTests(PostgresDatabaseFixture database)
     public async Task Genre_assignment_rejects_duplicate_and_missing_ids_without_partial_changes_and_keeps_existing_links()
     {
         await using var db = database.CreateDbContext();
-        var service = new MovieCatalogService(db, TimeProvider.System);
+        var service = DatabaseTestData.CreateCatalogService(db);
         var genre = await service.CreateGenreAsync($"Drama-{Guid.NewGuid():N}", $"drama-{Guid.NewGuid():N}", default);
         var movie = await service.CreateAsync(new("Film", null, null, 90, null, null, []), default);
 

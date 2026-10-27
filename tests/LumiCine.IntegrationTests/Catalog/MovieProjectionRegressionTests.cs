@@ -23,7 +23,7 @@ public sealed class MovieProjectionRegressionTests(PostgresDatabaseFixture datab
         db.Genres.AddRange(genres);
         db.MovieGenres.AddRange(genres.Select(genre => new MovieGenre(movie.Id, genre.Id, now)));
         await db.SaveChangesAsync();
-        var service = new MovieCatalogService(db, TimeProvider.System);
+        var service = DatabaseTestData.CreateCatalogService(db);
 
         var detail = await service.GetAsync(movie.Id, true, default);
         var page = await service.BrowseAsync(new(), suffix, null, true, default);

@@ -11,7 +11,7 @@ public sealed class GenreQueriesServiceTests(PostgresDatabaseFixture database)
     public async Task Public_and_management_genre_lists_are_stably_paginated()
     {
         await using var db = database.CreateDbContext();
-        var service = new MovieCatalogService(db, TimeProvider.System);
+        var service = DatabaseTestData.CreateCatalogService(db);
         var suffix = Guid.NewGuid().ToString("N");
         var firstId = (await service.CreateGenreAsync($"ZZZ-A-Genre-{suffix}", $"zzz-a-genre-{suffix}", default)).Id;
         var secondId = (await service.CreateGenreAsync($"ZZZ-B-Genre-{suffix}", $"zzz-b-genre-{suffix}", default)).Id;

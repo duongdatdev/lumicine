@@ -2,12 +2,18 @@ using LumiCine.Domain.Bookings;
 using LumiCine.Domain.Catalog;
 using LumiCine.Domain.Cinemas;
 using LumiCine.Domain.Scheduling;
+using LumiCine.Infrastructure.Catalog;
+using LumiCine.Infrastructure.Discovery;
 using LumiCine.Infrastructure.Persistence;
+using Microsoft.Extensions.Options;
 
 namespace LumiCine.IntegrationTests.Persistence;
 
 internal static class DatabaseTestData
 {
+    public static MovieCatalogService CreateCatalogService(LumiCineDbContext context) =>
+        new(context, TimeProvider.System, new MovieSearchDocumentBuilder(Options.Create(new GeminiOptions())));
+
     public static async Task<(Movie Movie, Cinema Cinema, Room Room)> CreateBaseAsync(
         LumiCineDbContext context,
         bool movieIsActive = true,

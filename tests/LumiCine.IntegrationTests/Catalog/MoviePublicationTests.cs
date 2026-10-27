@@ -13,7 +13,7 @@ public sealed class MoviePublicationTests(PostgresDatabaseFixture database)
     public async Task Duration_change_and_deactivation_are_blocked_during_the_showtime_cleanup_window()
     {
         await using var db = database.CreateDbContext();
-        var service = new MovieCatalogService(db, TimeProvider.System);
+        var service = DatabaseTestData.CreateCatalogService(db);
         var movie = await service.CreateAsync(new("Film", null, null, 90, null, null, []), default);
         var (_, _, room) = await DatabaseTestData.CreateBaseAsync(db);
         var now = DateTime.UtcNow;

@@ -11,7 +11,7 @@ public sealed class MovieMetadataTests(PostgresDatabaseFixture database)
     public async Task Create_and_update_trim_metadata_and_metadata_edits_preserve_the_poster_url()
     {
         await using var db = database.CreateDbContext();
-        var service = new MovieCatalogService(db, TimeProvider.System);
+        var service = DatabaseTestData.CreateCatalogService(db);
         var suffix = Guid.NewGuid().ToString("N");
         var movie = await service.CreateAsync(new($" Movie-{suffix} ", $" Original-{suffix} ", " Synopsis ", 90,
             new DateOnly(2026, 10, 1), " PG-13 ", []), default);
