@@ -5,6 +5,7 @@ using LumiCine.API;
 using LumiCine.Application.Scheduling;
 using LumiCine.Infrastructure;
 using LumiCine.Infrastructure.Bookings;
+using LumiCine.Infrastructure.Discovery;
 using LumiCine.Infrastructure.Identity;
 using LumiCine.Infrastructure.Seeding;
 using Microsoft.AspNetCore.Mvc;
@@ -98,6 +99,8 @@ if (seedMode == SeedMode.None)
         builder.Services.AddHostedService<BookingExpirationWorker>();
         builder.Services.AddSingleton<TicketEmailWorker>();
         builder.Services.AddHostedService(sp => sp.GetRequiredService<TicketEmailWorker>());
+        builder.Services.AddSingleton<MovieEmbeddingWorker>();
+        builder.Services.AddHostedService(sp => sp.GetRequiredService<MovieEmbeddingWorker>());
     }
 }
 else

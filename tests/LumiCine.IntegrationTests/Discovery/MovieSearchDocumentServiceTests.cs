@@ -77,16 +77,13 @@ public sealed class MovieSearchDocumentServiceTests(PostgresDatabaseFixture fixt
         await using var db = fixture.CreateDbContext();
         await db.MovieSearchDocuments.ExecuteDeleteAsync();
         var clock = new MutableClock(DateTimeOffset.UtcNow);
-        var movie = (await DatabaseTestData.CreateBaseAsync(db)).Movie;
-        var document = new MovieSearchDocument(Guid.NewGuid(), movie.Id, "Văn bản gốc", new string('a', 64), clock.GetUtcNow().UtcDateTime);
-        db.MovieSearchDocuments.Add(document);
-        await db.SaveChangesAsync();
+        var document = await SeedDocumentAsync(db, clock, "Văn bản gốc", new string('a', 64));
         var service = new MovieSearchDocumentService(db, clock);
 
         var claimed = await service.ClaimDueAsync(10, CancellationToken.None);
         var work = Assert.Single(claimed);
         Assert.Equal(document.Id, work.DocumentId);
-        Assert.Equal(movie.Id, work.MovieId);
+        Assert.Equal(document.MovieId, work.MovieId);
         Assert.Equal("Văn bản gốc", work.DocumentText);
         var stored = await db.MovieSearchDocuments.AsNoTracking().SingleAsync(x => x.Id == document.Id);
         var leaseDelay = stored.LeaseUntilUtc!.Value - clock.GetUtcNow().UtcDateTime;
@@ -104,11 +101,8 @@ public sealed class MovieSearchDocumentServiceTests(PostgresDatabaseFixture fixt
         await using var db = fixture.CreateDbContext();
         await db.MovieSearchDocuments.ExecuteDeleteAsync();
         var clock = new MutableClock(DateTimeOffset.UtcNow);
-        var movie = (await DatabaseTestData.CreateBaseAsync(db)).Movie;
         var hash = new string('b', 64);
-        var document = new MovieSearchDocument(Guid.NewGuid(), movie.Id, "Văn bản gốc", hash, clock.GetUtcNow().UtcDateTime);
-        db.MovieSearchDocuments.Add(document);
-        await db.SaveChangesAsync();
+        var document = await SeedDocumentAsync(db, clock, "Văn bản gốc", hash);
         // The worker claims and completes through its own scope, so the service gets a fresh context.
         await using var serviceDb = fixture.CreateDbContext();
         var service = new MovieSearchDocumentService(serviceDb, clock);
@@ -132,11 +126,8 @@ public sealed class MovieSearchDocumentServiceTests(PostgresDatabaseFixture fixt
         await using var db = fixture.CreateDbContext();
         await db.MovieSearchDocuments.ExecuteDeleteAsync();
         var clock = new MutableClock(DateTimeOffset.UtcNow);
-        var movie = (await DatabaseTestData.CreateBaseAsync(db)).Movie;
         var originalHash = new string('c', 64);
-        var document = new MovieSearchDocument(Guid.NewGuid(), movie.Id, "Văn bản gốc", originalHash, clock.GetUtcNow().UtcDateTime);
-        db.MovieSearchDocuments.Add(document);
-        await db.SaveChangesAsync();
+        var document = await SeedDocumentAsync(db, clock, "Văn bản gốc", originalHash);
         await using var serviceDb = fixture.CreateDbContext();
         var service = new MovieSearchDocumentService(serviceDb, clock);
         Assert.Single(await service.ClaimDueAsync(10, CancellationToken.None));
@@ -165,10 +156,7 @@ public sealed class MovieSearchDocumentServiceTests(PostgresDatabaseFixture fixt
         await using var db = fixture.CreateDbContext();
         await db.MovieSearchDocuments.ExecuteDeleteAsync();
         var clock = new MutableClock(DateTimeOffset.UtcNow);
-        var movie = (await DatabaseTestData.CreateBaseAsync(db)).Movie;
-        var document = new MovieSearchDocument(Guid.NewGuid(), movie.Id, "Văn bản gốc", new string('a', 64), clock.GetUtcNow().UtcDateTime);
-        db.MovieSearchDocuments.Add(document);
-        await db.SaveChangesAsync();
+        var document = await SeedDocumentAsync(db, clock, "Văn bản gốc", new string('a', 64));
         var service = new MovieSearchDocumentService(db, clock);
 
         await service.RetryAsync(document.Id, "Gemini quota exceeded", CancellationToken.None);
@@ -195,6 +183,19 @@ public sealed class MovieSearchDocumentServiceTests(PostgresDatabaseFixture fixt
 
         await service.CompleteAsync(Guid.NewGuid(), "gemini-embedding-2", 3, Vector, new string('a', 64), CancellationToken.None);
         await service.RetryAsync(Guid.NewGuid(), "missing", CancellationToken.None);
+    }
+
+    // Seeds one pending document an hour into the future and catches the mutable clock up to it:
+    // stray hosted embedding workers from other tests' hosts poll this shared database with the
+    // real time and must never see the row due, while the local clock still claims it normally.
+    private static async Task<MovieSearchDocument> SeedDocumentAsync(LumiCineDbContext db, MutableClock clock, string documentText, string hash)
+    {
+        var movie = (await DatabaseTestData.CreateBaseAsync(db)).Movie;
+        var document = new MovieSearchDocument(Guid.NewGuid(), movie.Id, documentText, hash, clock.GetUtcNow().UtcDateTime.AddHours(1));
+        db.MovieSearchDocuments.Add(document);
+        await db.SaveChangesAsync();
+        clock.Advance(TimeSpan.FromHours(1).Add(TimeSpan.FromSeconds(1)));
+        return document;
     }
 
     private static MovieSearchDocumentBuilder CreateBuilder(GeminiOptions options) => new(Options.Create(options));
