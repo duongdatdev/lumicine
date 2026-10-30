@@ -20,6 +20,7 @@
   <ItemGroup>
     <ProjectReference Include="..\..\backend\LumiCine.Domain\LumiCine.Domain.csproj" />
     <ProjectReference Include="..\..\backend\LumiCine.Application\LumiCine.Application.csproj" />
+    <ProjectReference Include="..\..\backend\LumiCine.Infrastructure\LumiCine.Infrastructure.csproj" />
   </ItemGroup>
 
 </Project>
