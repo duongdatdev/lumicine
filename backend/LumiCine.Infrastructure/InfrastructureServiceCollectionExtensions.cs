@@ -94,6 +94,7 @@ public static class InfrastructureServiceCollectionExtensions
         services.AddScoped<IDiscoveryFilterResolver, DiscoveryFilterResolver>();
         services.AddSingleton<IMovieSearchDocumentBuilder, MovieSearchDocumentBuilder>();
         services.AddScoped<IMovieSearchDocumentService, MovieSearchDocumentService>();
+        services.AddScoped<IDiscoverySearchService, DiscoverySearchService>();
 
         services.AddIdentityCore<ApplicationUser>(options =>
             {
