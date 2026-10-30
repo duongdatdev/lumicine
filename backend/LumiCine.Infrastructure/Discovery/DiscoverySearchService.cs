@@ -1,5 +1,7 @@
 using LumiCine.Application.Discovery;
+using LumiCine.Domain.Bookings;
 using LumiCine.Domain.Catalog;
+using LumiCine.Domain.Cinemas;
 using LumiCine.Domain.Scheduling;
 using LumiCine.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
@@ -10,8 +12,8 @@ namespace LumiCine.Infrastructure.Discovery;
 
 /// <summary>
 /// Retrieval stage of discovery: loads filtered movie candidates, ranks them by cosine
-/// similarity over movie embeddings fused with keyword scores, and returns the top movies
-/// for the conversation turn. Showtime availability is resolved on top of this ranking.
+/// similarity over movie embeddings fused with keyword scores, then keeps only movies whose
+/// showtimes still have live availability inside the requested window.
 /// </summary>
 public sealed class DiscoverySearchService(
     LumiCineDbContext db,
@@ -21,6 +23,10 @@ public sealed class DiscoverySearchService(
     IOptions<DiscoveryConversationOptions> conversation) : IDiscoverySearchService
 {
     private const int CandidateCap = 5000;
+
+    // Upper bound for the per-movie showtime scan; the zone time-of-day filter runs in memory,
+    // so the earliest qualifying showtimes come from the first N upcoming rows.
+    private const int ShowtimeScanCap = 200;
 
     public async Task<DiscoverySearchOutput> SearchAsync(DiscoverySearchInput input, CancellationToken cancellationToken)
     {
@@ -56,7 +62,7 @@ public sealed class DiscoverySearchService(
         IReadOnlyList<(Guid Id, double Score)> ranked;
         if (!hasTextQuery)
         {
-            // Pure schedule search: relevance comes from showtimes, so keep candidate (Id) order.
+            // Pure schedule search: relevance comes from showtimes, not text.
             mode = DiscoveryModes.Schedule;
             ranked = candidates.Select(c => (c.Id, 0.0)).ToList();
         }
@@ -76,15 +82,17 @@ public sealed class DiscoverySearchService(
         }
 
         var byId = candidates.ToDictionary(c => c.Id);
+        var selected = await SelectByAvailabilityAsync(ranked, byId, filters, windowStart, windowEnd, now, hasTextQuery, cancellationToken);
         var results = new List<DiscoveryMovieResult>();
-        foreach (var (movieId, score) in ranked)
+        foreach (var movie in selected)
         {
-            if (results.Count >= conversation.Value.ResultMovieLimit)
-                break;
-            if (!byId.TryGetValue(movieId, out var candidate))
-                continue;
+            var candidate = byId[movie.MovieId];
+            var showtimes = movie.Showtimes
+                .Select(st => new DiscoveryShowtimeResult(st.ShowtimeId, movie.MovieId, st.CinemaId, st.CinemaName,
+                    st.RoomId, st.RoomName, st.StartAtUtc, st.CheapestPrice ?? st.BasePrice, st.AvailableSeats))
+                .ToList();
             results.Add(new DiscoveryMovieResult(candidate.Id, candidate.Title, candidate.OriginalTitle,
-                candidate.DurationMinutes, candidate.AgeRating, candidate.PosterUrl, candidate.GenreNames, [], score));
+                candidate.DurationMinutes, candidate.AgeRating, candidate.PosterUrl, candidate.GenreNames, showtimes, movie.Score));
         }
 
         return new DiscoverySearchOutput(results, mode, isDegraded, warnings, now);
@@ -100,19 +108,9 @@ public sealed class DiscoverySearchService(
             .ToList();
         // Slugs are stored lowercase; contains filters mirror the catalog service's lowered terms.
         var nameLower = string.IsNullOrWhiteSpace(filters.MovieNameText) ? null : filters.MovieNameText.Trim().ToLower();
-        var cityLower = string.IsNullOrWhiteSpace(filters.City) ? null : filters.City.Trim().ToLower();
 
-        var qualifyingShowtimes = db.Showtimes.AsNoTracking()
-            .Where(s => s.Status == ShowtimeStatus.Scheduled &&
-                s.StartAtUtc >= windowStart && s.StartAtUtc >= now && s.StartAtUtc < windowEnd)
-            .Join(db.Rooms.AsNoTracking().Where(r => r.IsActive), s => s.RoomId, r => r.Id, (s, r) => new { s, r })
-            .Join(db.Cinemas.AsNoTracking().Where(c => c.IsActive), x => x.r.CinemaId, c => c.Id, (x, c) => new { x.s, x.r, c });
-        if (filters.CinemaId is Guid cinemaId)
-            qualifyingShowtimes = qualifyingShowtimes.Where(x => x.c.Id == cinemaId);
-        if (cityLower is not null)
-            qualifyingShowtimes = qualifyingShowtimes.Where(x => x.c.City.ToLower() == cityLower);
-
-        var movies = db.Movies.AsNoTracking().Where(m => m.IsActive && qualifyingShowtimes.Any(s => s.s.MovieId == m.Id));
+        var scheduled = ScheduledShowtimes(filters, windowStart, windowEnd, now);
+        var movies = db.Movies.AsNoTracking().Where(m => m.IsActive && scheduled.Any(s => s.MovieId == m.Id));
         if (filters.MaxDurationMinutes is int maxDuration)
             movies = movies.Where(m => m.DurationMinutes <= maxDuration);
         if (genreSlugs.Count > 0)
@@ -146,6 +144,191 @@ public sealed class DiscoverySearchService(
                 r.PosterUrl, r.Synopsis, genreNamesByMovie.GetValueOrDefault(r.Id, [])))
             .ToList();
         return (candidates, capped);
+    }
+
+    /// <summary>
+    /// Scheduled showtimes in the search window whose room and cinema are active and satisfy the
+    /// cinema identity filters. Entity-rooted so both the candidate gate and the availability
+    /// walk compose over the same definition.
+    /// </summary>
+    private IQueryable<Showtime> ScheduledShowtimes(DiscoveryFilters filters, DateTime windowStart, DateTime windowEnd, DateTime now)
+    {
+        var cityLower = string.IsNullOrWhiteSpace(filters.City) ? null : filters.City.Trim().ToLower();
+        return db.Showtimes.AsNoTracking().Where(s =>
+            s.Status == ShowtimeStatus.Scheduled &&
+            s.StartAtUtc >= windowStart && s.StartAtUtc >= now && s.StartAtUtc < windowEnd &&
+            db.Rooms.Any(r => r.Id == s.RoomId && r.IsActive &&
+                db.Cinemas.Any(c => c.Id == r.CinemaId && c.IsActive &&
+                    (filters.CinemaId == null || c.Id == filters.CinemaId) &&
+                    (cityLower == null || c.City.ToLower() == cityLower))));
+    }
+
+    /// <summary>Named-slot projection for showtimes; must stay the final query operation.</summary>
+    private IQueryable<ShowtimeSlot> ProjectSlots(IQueryable<Showtime> showtimes) =>
+        from s in showtimes
+        join r in db.Rooms.AsNoTracking() on s.RoomId equals r.Id
+        join c in db.Cinemas.AsNoTracking() on r.CinemaId equals c.Id
+        select new ShowtimeSlot(s.Id, s.MovieId, r.Id, r.Name, c.Id, c.Name, s.StartAtUtc, s.BasePrice);
+
+    /// <summary>
+    /// Walks the ranking in order, keeps the earliest qualifying showtimes per movie and stops
+    /// after the movie limit; the final set is re-verified against fresh data without backfill.
+    /// </summary>
+    private async Task<List<SelectedMovie>> SelectByAvailabilityAsync(
+        IReadOnlyList<(Guid Id, double Score)> ranked,
+        Dictionary<Guid, MovieCandidate> byId,
+        DiscoveryFilters filters,
+        DateTime windowStart,
+        DateTime windowEnd,
+        DateTime now,
+        bool hasTextQuery,
+        CancellationToken ct)
+    {
+        var limit = conversation.Value.ResultMovieLimit;
+        var selected = new List<SelectedMovie>();
+        foreach (var (movieId, score) in ranked)
+        {
+            if (selected.Count >= limit)
+                break;
+            if (!byId.ContainsKey(movieId))
+                continue;
+            var showtimes = await LoadQualifyingShowtimesAsync(movieId, filters, windowStart, windowEnd, now, ct);
+            if (showtimes.Count > 0)
+                selected.Add(new SelectedMovie(movieId, score, showtimes));
+        }
+
+        var verified = await ReverifyAsync(selected, filters, windowStart, windowEnd, ct);
+        if (!hasTextQuery)
+        {
+            // No relevance signal: the earliest qualifying showtime is the ranking.
+            verified = verified
+                .OrderBy(s => s.Showtimes.Min(st => st.StartAtUtc))
+                .ThenBy(s => s.MovieId)
+                .ToList();
+        }
+        return verified;
+    }
+
+    private async Task<List<QualifyingShowtime>> LoadQualifyingShowtimesAsync(
+        Guid movieId, DiscoveryFilters filters, DateTime windowStart, DateTime windowEnd, DateTime now, CancellationToken ct)
+    {
+        var rows = await ProjectSlots(ScheduledShowtimes(filters, windowStart, windowEnd, now)
+                .Where(s => s.MovieId == movieId)
+                .OrderBy(s => s.StartAtUtc).ThenBy(s => s.Id)
+                .Take(ShowtimeScanCap))
+            .ToListAsync(ct);
+        // Zone wall-clock minutes are not translatable, so the time window filters in memory.
+        var inTimeWindow = filters.TimeWindowStartMinutes is int startMinutes && filters.TimeWindowEndMinutes is int endMinutes
+            ? rows.Where(x => InTimeWindow(DiscoveryTime.MinutesOfDayInZone(x.StartAtUtc), startMinutes, endMinutes)).ToList()
+            : rows;
+        var seatStats = await LoadSeatStatsAsync(inTimeWindow.Select(x => x.ShowtimeId).ToList(), now, ct);
+
+        var qualifying = new List<QualifyingShowtime>();
+        foreach (var row in inTimeWindow)
+        {
+            var (availableSeats, cheapestPrice) = seatStats.GetValueOrDefault(row.ShowtimeId);
+            if (filters.MinSeats is int minSeats && availableSeats < minSeats)
+                continue;
+            if (filters.MaxPrice is decimal maxPrice && (cheapestPrice is not decimal price || price > maxPrice))
+                continue;
+            qualifying.Add(new QualifyingShowtime(row.ShowtimeId, row.RoomId, row.RoomName, row.CinemaId, row.CinemaName,
+                row.StartAtUtc, row.BasePrice, availableSeats, cheapestPrice));
+            if (qualifying.Count >= conversation.Value.ShowtimesPerMovieLimit)
+                break;
+        }
+        return qualifying;
+    }
+
+    /// <summary>Effective seat counts per showtime, mirroring ShowtimeService.GetSeatsAsync.</summary>
+    private async Task<Dictionary<Guid, (int AvailableSeats, decimal? CheapestPrice)>> LoadSeatStatsAsync(
+        List<Guid> showtimeIds, DateTime now, CancellationToken ct)
+    {
+        if (showtimeIds.Count == 0)
+            return [];
+        var rows = await (from showtimeSeat in db.ShowtimeSeats.AsNoTracking()
+                          join seat in db.Seats.AsNoTracking() on new { showtimeSeat.SeatId, showtimeSeat.RoomId } equals new { SeatId = seat.Id, seat.RoomId }
+                          join booking in db.Bookings.AsNoTracking() on showtimeSeat.CurrentBookingId equals booking.Id into bookings
+                          from booking in bookings.DefaultIfEmpty()
+                          where showtimeIds.Contains(showtimeSeat.ShowtimeId)
+                          select new
+                          {
+                              showtimeSeat.ShowtimeId,
+                              showtimeSeat.Status,
+                              showtimeSeat.Price,
+                              SeatIsActive = seat.IsActive,
+                              BookingStatus = (BookingStatus?)booking.Status,
+                              booking.HoldExpiresAtUtc
+                          })
+            .ToListAsync(ct);
+
+        var stats = new Dictionary<Guid, (int, decimal?)>();
+        foreach (var group in rows.Where(x => x.SeatIsActive).GroupBy(x => x.ShowtimeId))
+        {
+            var available = group
+                .Where(x => IsEffectivelyAvailable(x.Status, x.BookingStatus, x.HoldExpiresAtUtc, now))
+                .ToList();
+            stats[group.Key] = (available.Count, available.Count == 0 ? null : available.Min(x => x.Price));
+        }
+        return stats;
+    }
+
+    private static bool IsEffectivelyAvailable(ShowtimeSeatStatus status, BookingStatus? bookingStatus, DateTime? holdExpiresAtUtc, DateTime now) =>
+        status == ShowtimeSeatStatus.Available ||
+        (status == ShowtimeSeatStatus.Held && bookingStatus == BookingStatus.Expired) ||
+        (status == ShowtimeSeatStatus.Held && bookingStatus == BookingStatus.Pending && holdExpiresAtUtc is DateTime expiry && expiry <= now);
+
+    private static bool InTimeWindow(int minutes, int startMinutes, int endMinutes) =>
+        startMinutes <= endMinutes
+            ? minutes >= startMinutes && minutes <= endMinutes
+            : minutes >= startMinutes || minutes <= endMinutes;
+
+    /// <summary>
+    /// Re-queries the selected movies, showtimes and seats fresh and drops anything that no
+    /// longer qualifies; dropped movies are not backfilled from lower-ranked candidates.
+    /// </summary>
+    private async Task<List<SelectedMovie>> ReverifyAsync(
+        List<SelectedMovie> selected, DiscoveryFilters filters, DateTime windowStart, DateTime windowEnd, CancellationToken ct)
+    {
+        if (selected.Count == 0)
+            return [];
+        var now = UtcNow;
+        var movieIds = selected.Select(s => s.MovieId).ToList();
+        var activeMovieIds = (await db.Movies.AsNoTracking()
+            .Where(m => movieIds.Contains(m.Id) && m.IsActive)
+            .Select(m => m.Id)
+            .ToListAsync(ct)).ToHashSet();
+        var showtimeIds = selected.SelectMany(s => s.Showtimes).Select(st => st.ShowtimeId).ToList();
+        var freshRows = await ProjectSlots(ScheduledShowtimes(filters, windowStart, windowEnd, now)
+                .Where(s => showtimeIds.Contains(s.Id)))
+            .ToListAsync(ct);
+        var freshById = freshRows.ToDictionary(x => x.ShowtimeId);
+        var seatStats = await LoadSeatStatsAsync(showtimeIds, now, ct);
+
+        var verified = new List<SelectedMovie>();
+        foreach (var movie in selected)
+        {
+            if (!activeMovieIds.Contains(movie.MovieId))
+                continue;
+            var kept = new List<QualifyingShowtime>();
+            foreach (var showtime in movie.Showtimes)
+            {
+                if (!freshById.TryGetValue(showtime.ShowtimeId, out var fresh))
+                    continue; // no longer scheduled, future, active or inside the cinema filters
+                if (filters.TimeWindowStartMinutes is int startMinutes && filters.TimeWindowEndMinutes is int endMinutes &&
+                    !InTimeWindow(DiscoveryTime.MinutesOfDayInZone(fresh.StartAtUtc), startMinutes, endMinutes))
+                    continue;
+                var (availableSeats, cheapestPrice) = seatStats.GetValueOrDefault(fresh.ShowtimeId);
+                if (filters.MinSeats is int minSeats && availableSeats < minSeats)
+                    continue;
+                if (filters.MaxPrice is decimal maxPrice && (cheapestPrice is not decimal price || price > maxPrice))
+                    continue;
+                kept.Add(new QualifyingShowtime(fresh.ShowtimeId, fresh.RoomId, fresh.RoomName, fresh.CinemaId, fresh.CinemaName,
+                    fresh.StartAtUtc, fresh.BasePrice, availableSeats, cheapestPrice));
+            }
+            if (kept.Count > 0)
+                verified.Add(new SelectedMovie(movie.MovieId, movie.Score, kept));
+        }
+        return verified;
     }
 
     private async Task<float[]?> TryEmbedQueryAsync(string text, List<string> warnings, CancellationToken ct)
@@ -216,4 +399,27 @@ public sealed class DiscoverySearchService(
         string? PosterUrl,
         string? Synopsis,
         IReadOnlyList<string> GenreNames);
+
+    private sealed record ShowtimeSlot(
+        Guid ShowtimeId,
+        Guid MovieId,
+        Guid RoomId,
+        string RoomName,
+        Guid CinemaId,
+        string CinemaName,
+        DateTime StartAtUtc,
+        decimal BasePrice);
+
+    private sealed record QualifyingShowtime(
+        Guid ShowtimeId,
+        Guid RoomId,
+        string RoomName,
+        Guid CinemaId,
+        string CinemaName,
+        DateTime StartAtUtc,
+        decimal BasePrice,
+        int AvailableSeats,
+        decimal? CheapestPrice);
+
+    private sealed record SelectedMovie(Guid MovieId, double Score, IReadOnlyList<QualifyingShowtime> Showtimes);
 }

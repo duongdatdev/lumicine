@@ -38,7 +38,6 @@ public sealed class DiscoverySearchRankingTests(PostgresDatabaseFixture fixture)
         Assert.Equal([movieA.Id, movieB.Id, movieC.Id], output.Movies.Select(m => m.MovieId).ToList());
         Assert.True(output.Movies[0].Score > output.Movies[1].Score);
         Assert.True(output.Movies[1].Score > output.Movies[2].Score);
-        Assert.All(output.Movies, movie => Assert.Empty(movie.Showtimes));
         var first = output.Movies[0];
         Assert.StartsWith("Dáng đúng", first.Title);
         Assert.StartsWith("Tài liệu", Assert.Single(first.Genres));
@@ -66,7 +65,6 @@ public sealed class DiscoverySearchRankingTests(PostgresDatabaseFixture fixture)
         // The remaining two tie at zero matches and fall back to Id order.
         Assert.Equal(new[] { movieA.Id, movieC.Id }.OrderBy(x => x), output.Movies.Skip(1).Select(m => m.MovieId));
         Assert.Equal(output.Movies[1].Score, output.Movies[2].Score);
-        Assert.All(output.Movies, movie => Assert.Empty(movie.Showtimes));
     }
 
     [Fact]
