@@ -45,6 +45,9 @@ public sealed class DiscoverySearchService(
 
         var keywordQuery = string.Join(' ', new[] { filters.TopicText, filters.MovieNameText }.Where(s => !string.IsNullOrWhiteSpace(s)));
         var hasTextQuery = keywordQuery.Length > 0;
+        // When the parser produced no topic text (degraded turn), the raw message still ranks
+        // keyword matches; concrete-only queries keep their schedule ordering untouched.
+        var rankText = hasTextQuery ? keywordQuery : (input.MessageText ?? string.Empty);
 
         float[]? queryVector = null;
         if (hasTextQuery && !capped && candidates.Count > 0 && clients.IsConfigured)
@@ -56,7 +59,7 @@ public sealed class DiscoverySearchService(
         var semanticRanking = queryVector is null
             ? null
             : await BuildSemanticRankingAsync(queryVector, candidates, cancellationToken);
-        var keywordRanking = RankByKeyword(candidates, keywordQuery);
+        var keywordRanking = RankByKeyword(candidates, rankText);
 
         string mode;
         IReadOnlyList<(Guid Id, double Score)> ranked;

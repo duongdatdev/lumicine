@@ -28,7 +28,7 @@ public sealed class DiscoveryConversationPersistenceTests(PostgresDatabaseFixtur
     }
 
     private static DiscoveryConversationService CreateService(LumiCineDbContext db) =>
-        new(db, TimeProvider.System, Options.Create(new DiscoveryConversationOptions()));
+        DiscoveryTestServices.CreateConversationService(db);
 
     [Fact]
     public async Task Create_persists_private_conversation_with_default_filters()
@@ -94,7 +94,7 @@ public sealed class DiscoveryConversationPersistenceTests(PostgresDatabaseFixtur
         await db.SaveChangesAsync();
 
         var clock = new FixedClock(new DateTime(2026, 11, 9, 3, 0, 0, DateTimeKind.Utc));
-        var service = new DiscoveryConversationService(fixture.CreateDbContext(), clock, Options.Create(new DiscoveryConversationOptions()));
+        var service = DiscoveryTestServices.CreateConversationService(fixture.CreateDbContext(), clock);
         var summary = Assert.Single((await service.ListAsync(userId, new PageQuery(1, 10), default)).Items);
 
         Assert.True(summary.IsExpired);

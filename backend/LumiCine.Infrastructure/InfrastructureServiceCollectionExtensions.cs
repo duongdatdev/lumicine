@@ -95,6 +95,7 @@ public static class InfrastructureServiceCollectionExtensions
         services.AddSingleton<IMovieSearchDocumentBuilder, MovieSearchDocumentBuilder>();
         services.AddScoped<IMovieSearchDocumentService, MovieSearchDocumentService>();
         services.AddScoped<IDiscoverySearchService, DiscoverySearchService>();
+        services.AddScoped<IDiscoveryAnswerWriter, DiscoveryAnswerWriter>();
 
         services.AddIdentityCore<ApplicationUser>(options =>
             {

@@ -43,7 +43,7 @@ public sealed class DiscoveryTurnStoreTests(PostgresDatabaseFixture fixture)
     {
         await using var db = fixture.CreateDbContext();
         var userId = await CreateUserAsync(db, $"turn-begin-{Guid.NewGuid():N}@lumicine.test");
-        var conversationId = (await new DiscoveryConversationService(db, TimeProvider.System, Options.Create(new DiscoveryConversationOptions())).CreateAsync(userId, default)).Id;
+        var conversationId = (await DiscoveryTestServices.CreateConversationService(db).CreateAsync(userId, default)).Id;
 
         var store = CreateStore(db);
         var result = await store.BeginAsync(userId, conversationId, new(Guid.NewGuid(), 1, "Có phim du hành thời gian không?"), default);
@@ -65,7 +65,7 @@ public sealed class DiscoveryTurnStoreTests(PostgresDatabaseFixture fixture)
     {
         await using var db = fixture.CreateDbContext();
         var userId = await CreateUserAsync(db, $"turn-complete-{Guid.NewGuid():N}@lumicine.test");
-        var conversationId = (await new DiscoveryConversationService(db, TimeProvider.System, Options.Create(new DiscoveryConversationOptions())).CreateAsync(userId, default)).Id;
+        var conversationId = (await DiscoveryTestServices.CreateConversationService(db).CreateAsync(userId, default)).Id;
         var requestId = Guid.NewGuid();
         var store = CreateStore(db);
         var context = (await store.BeginAsync(userId, conversationId, new(requestId, 1, "Phim dưới 2 tiếng"), default)).Context!;
@@ -89,7 +89,7 @@ public sealed class DiscoveryTurnStoreTests(PostgresDatabaseFixture fixture)
     {
         await using var db = fixture.CreateDbContext();
         var userId = await CreateUserAsync(db, $"turn-replay-{Guid.NewGuid():N}@lumicine.test");
-        var conversationId = (await new DiscoveryConversationService(db, TimeProvider.System, Options.Create(new DiscoveryConversationOptions())).CreateAsync(userId, default)).Id;
+        var conversationId = (await DiscoveryTestServices.CreateConversationService(db).CreateAsync(userId, default)).Id;
         var requestId = Guid.NewGuid();
         var store = CreateStore(db);
         var context = (await store.BeginAsync(userId, conversationId, new(requestId, 1, "Có phim kinh dị không?"), default)).Context!;
@@ -113,7 +113,7 @@ public sealed class DiscoveryTurnStoreTests(PostgresDatabaseFixture fixture)
     {
         await using var db = fixture.CreateDbContext();
         var userId = await CreateUserAsync(db, $"turn-replay-conflict-{Guid.NewGuid():N}@lumicine.test");
-        var conversationId = (await new DiscoveryConversationService(db, TimeProvider.System, Options.Create(new DiscoveryConversationOptions())).CreateAsync(userId, default)).Id;
+        var conversationId = (await DiscoveryTestServices.CreateConversationService(db).CreateAsync(userId, default)).Id;
         var requestId = Guid.NewGuid();
         var store = CreateStore(db);
         var context = (await store.BeginAsync(userId, conversationId, new(requestId, 1, "Phim hài"), default)).Context!;
@@ -129,7 +129,7 @@ public sealed class DiscoveryTurnStoreTests(PostgresDatabaseFixture fixture)
     {
         await using var db = fixture.CreateDbContext();
         var userId = await CreateUserAsync(db, $"turn-version-{Guid.NewGuid():N}@lumicine.test");
-        var conversationId = (await new DiscoveryConversationService(db, TimeProvider.System, Options.Create(new DiscoveryConversationOptions())).CreateAsync(userId, default)).Id;
+        var conversationId = (await DiscoveryTestServices.CreateConversationService(db).CreateAsync(userId, default)).Id;
         var store = CreateStore(db);
         await store.BeginAsync(userId, conversationId, new(Guid.NewGuid(), 1, "Lượt một"), default);
 
@@ -164,7 +164,7 @@ public sealed class DiscoveryTurnStoreTests(PostgresDatabaseFixture fixture)
     {
         await using var db = fixture.CreateDbContext();
         var userId = await CreateUserAsync(db, $"turn-limit-{Guid.NewGuid():N}@lumicine.test");
-        var conversationId = (await new DiscoveryConversationService(db, TimeProvider.System, Options.Create(new DiscoveryConversationOptions())).CreateAsync(userId, default)).Id;
+        var conversationId = (await DiscoveryTestServices.CreateConversationService(db).CreateAsync(userId, default)).Id;
         var store = CreateStore(db);
 
         var version = 1;
@@ -186,7 +186,7 @@ public sealed class DiscoveryTurnStoreTests(PostgresDatabaseFixture fixture)
         await using var db = fixture.CreateDbContext();
         var ownerId = await CreateUserAsync(db, $"turn-owner-{Guid.NewGuid():N}@lumicine.test");
         var strangerId = await CreateUserAsync(db, $"turn-stranger-{Guid.NewGuid():N}@lumicine.test");
-        var conversationId = (await new DiscoveryConversationService(db, TimeProvider.System, Options.Create(new DiscoveryConversationOptions())).CreateAsync(ownerId, default)).Id;
+        var conversationId = (await DiscoveryTestServices.CreateConversationService(db).CreateAsync(ownerId, default)).Id;
         var store = CreateStore(db);
 
         var foreign = await Assert.ThrowsAsync<ApiException>(() =>
