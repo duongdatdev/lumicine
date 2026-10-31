@@ -99,7 +99,9 @@ public sealed class DiscoveryFilterResolverTests(PostgresDatabaseFixture databas
     {
         await using var db = database.CreateDbContext();
         var suffix = Guid.NewGuid().ToString("N")[..8];
-        db.Cinemas.Add(Cinema($"LD{suffix.ToUpperInvariant()}", $"Rạp Có {suffix}", $"Hà Nội {suffix}"));
+        // Digit-leading name keeps this cinema inside the first six listed while the shared
+        // test catalog fills with cinemas seeded by other classes.
+        db.Cinemas.Add(Cinema($"LD{suffix.ToUpperInvariant()}", $"0 Rạp Có {suffix}", $"Hà Nội {suffix}"));
         await db.SaveChangesAsync();
 
         var resolver = new DiscoveryFilterResolver(db, new FixedTimeProvider(new DateTimeOffset(2026, 11, 13, 10, 0, 0, TimeSpan.Zero)));
@@ -108,7 +110,7 @@ public sealed class DiscoveryFilterResolverTests(PostgresDatabaseFixture databas
         Assert.NotNull(resolution.ClarificationText);
         Assert.Contains($"Mình chưa tìm thấy rạp nào khớp \"Rạp Không Có {suffix}\"", resolution.ClarificationText);
         Assert.Contains("Các rạp đang có:", resolution.ClarificationText);
-        Assert.Contains($"Rạp Có {suffix}", resolution.ClarificationText);
+        Assert.Contains($"0 Rạp Có {suffix}", resolution.ClarificationText);
         Assert.Null(resolution.Filters.CinemaId);
     }
 
