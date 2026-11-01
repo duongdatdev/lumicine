@@ -11,6 +11,8 @@ using LumiCine.Infrastructure.Seeding;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.Extensions.Options;
+using System.IdentityModel.Tokens.Jwt;
+using System.Security.Claims;
 using System.Threading.RateLimiting;
 
 var seedMode = StartupCommandLine.ConsumeSeedFlags(args, out var builderArgs);
@@ -58,6 +60,10 @@ builder.Services.AddOptions<AuthRateLimitOptions>()
     .Bind(builder.Configuration.GetSection(AuthRateLimitOptions.SectionName))
     .ValidateDataAnnotations()
     .ValidateOnStart();
+builder.Services.AddOptions<DiscoveryRateLimitOptions>()
+    .Bind(builder.Configuration.GetSection(DiscoveryRateLimitOptions.SectionName))
+    .ValidateDataAnnotations()
+    .ValidateOnStart();
 builder.Services.AddRateLimiter(options =>
 {
     options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
@@ -80,6 +86,18 @@ builder.Services.AddOptions<RateLimiterOptions>().Configure<IOptions<AuthRateLim
             {
                 PermitLimit = rateLimitOptions.Value.PermitLimit,
                 Window = TimeSpan.FromSeconds(rateLimitOptions.Value.WindowSeconds),
+                QueueLimit = 0,
+                AutoReplenishment = true
+            })));
+// Discovery chats are AI-costly; the partition follows the signed-in user and falls back to the IP.
+builder.Services.AddOptions<RateLimiterOptions>().Configure<IOptions<DiscoveryRateLimitOptions>>((options, discoveryRateLimitOptions) =>
+    options.AddPolicy("DiscoveryPerUser", httpContext =>
+        RateLimitPartition.GetFixedWindowLimiter(
+            httpContext.User.FindFirstValue(JwtRegisteredClaimNames.Sub) ?? httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+            _ => new FixedWindowRateLimiterOptions
+            {
+                PermitLimit = discoveryRateLimitOptions.Value.PermitLimit,
+                Window = TimeSpan.FromSeconds(discoveryRateLimitOptions.Value.WindowSeconds),
                 QueueLimit = 0,
                 AutoReplenishment = true
             })));
@@ -128,8 +146,9 @@ if (seedMode != SeedMode.None)
 var app = builder.Build();
 app.UseExceptionHandler();
 app.UseRouting();
-app.UseRateLimiter();
 app.UseAuthentication();
+// Rate limiting runs after authentication so policies can partition by the signed-in user.
+app.UseRateLimiter();
 app.UseAuthorization();
 app.MapControllers();
 app.MapHub<ShowtimeHub>("/hubs/showtimes");

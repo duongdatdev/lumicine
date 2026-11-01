@@ -5,12 +5,14 @@ using LumiCine.Application.Common;
 using LumiCine.Application.Discovery;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 
 namespace LumiCine.API.Controllers;
 
 [ApiController]
 [Route("api/discovery/conversations")]
 [Authorize]
+[EnableRateLimiting("DiscoveryPerUser")]
 [ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)]
 public sealed class DiscoveryConversationsController(IDiscoveryConversationService conversations) : ControllerBase
 {
@@ -47,6 +49,7 @@ public sealed class DiscoveryConversationsController(IDiscoveryConversationServi
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     [ProducesResponseType(StatusCodes.Status409Conflict)]
     [ProducesResponseType(StatusCodes.Status410Gone)]
+    [ProducesResponseType(StatusCodes.Status429TooManyRequests)]
     public Task<DiscoveryChatResponse> SendMessage(Guid id, SendDiscoveryMessageRequest request,
         CancellationToken cancellationToken) =>
         conversations.SendMessageAsync(UserId, id, request, cancellationToken);
