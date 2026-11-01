@@ -95,7 +95,7 @@ public sealed class DiscoveryConversationService(
             isDegraded = true;
             mode = DiscoveryModes.Keyword;
             appliedFilters = existingFilters;
-            var search = await searchService.SearchAsync(new DiscoverySearchInput(userId, appliedFilters, request.Message, now), cancellationToken);
+            var search = await searchService.SearchAsync(new DiscoverySearchInput(userId, appliedFilters, request.Message, now, PreferMessageKeywords: true), cancellationToken);
             movies = search.Movies;
             availabilityAsOfUtc = search.AvailabilityAsOfUtc;
             if (search.Mode != DiscoveryModes.Hybrid) mode = search.Mode;

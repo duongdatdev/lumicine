@@ -44,10 +44,12 @@ public sealed class DiscoverySearchService(
         }
 
         var keywordQuery = string.Join(' ', new[] { filters.TopicText, filters.MovieNameText }.Where(s => !string.IsNullOrWhiteSpace(s)));
-        var hasTextQuery = keywordQuery.Length > 0;
-        // When the parser produced no topic text (degraded turn), the raw message still ranks
-        // keyword matches; concrete-only queries keep their schedule ordering untouched.
-        var rankText = hasTextQuery ? keywordQuery : (input.MessageText ?? string.Empty);
+        // A degraded turn (parser failed) ranks by the raw message; concrete-only queries
+        // without any extracted topic keep their schedule ordering untouched.
+        var hasTextQuery = keywordQuery.Length > 0 || input.PreferMessageKeywords;
+        var rankText = hasTextQuery
+            ? (keywordQuery.Length > 0 ? keywordQuery : (input.MessageText ?? string.Empty))
+            : string.Empty;
 
         float[]? queryVector = null;
         if (hasTextQuery && !capped && candidates.Count > 0 && clients.IsConfigured)

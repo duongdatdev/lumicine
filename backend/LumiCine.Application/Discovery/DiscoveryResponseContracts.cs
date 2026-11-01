@@ -102,7 +102,8 @@ public sealed record DiscoverySearchInput(
     Guid UserId,
     DiscoveryFilters Filters,
     string MessageText,
-    DateTime NowUtc);
+    DateTime NowUtc,
+    bool PreferMessageKeywords = false);
 
 public sealed record DiscoverySearchOutput(
     IReadOnlyList<DiscoveryMovieResult> Movies,
