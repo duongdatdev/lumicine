@@ -1,4 +1,4 @@
-using System.Text.Json.Serialization;
+﻿using System.Text.Json.Serialization;
 using LumiCine.Application.Common;
 
 namespace LumiCine.Application.Discovery;
@@ -48,4 +48,7 @@ public interface IDiscoveryConversationService
     /// whenever an AI step fails.
     /// </summary>
     Task<DiscoveryChatResponse> SendMessageAsync(Guid userId, Guid conversationId, SendDiscoveryMessageRequest request, CancellationToken cancellationToken);
+
+    /// <summary>Hard-deletes the conversation and its message history; foreign ids look like missing rows.</summary>
+    Task<bool> DeleteAsync(Guid userId, Guid conversationId, CancellationToken cancellationToken);
 }

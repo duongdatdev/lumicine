@@ -1,4 +1,4 @@
-using LumiCine.Application.Common;
+﻿using LumiCine.Application.Common;
 using LumiCine.Application.Discovery;
 using LumiCine.Domain.Discovery;
 using LumiCine.Infrastructure.Persistence;
@@ -195,6 +195,21 @@ public sealed class DiscoveryConversationService(
         public static readonly OrdinalComparer Instance = new();
         public bool Equals(string? x, string? y) => string.Equals(x, y, StringComparison.Ordinal);
         public int GetHashCode(string obj) => obj.GetHashCode(StringComparison.Ordinal);
+    }
+
+    public async Task<bool> DeleteAsync(Guid userId, Guid conversationId, CancellationToken cancellationToken)
+    {
+        await using var tx = await db.Database.BeginTransactionAsync(cancellationToken);
+        await db.LockRowAsync("DiscoveryConversations", conversationId, cancellationToken);
+        var conversation = await db.DiscoveryConversations.SingleOrDefaultAsync(c => c.Id == conversationId, cancellationToken);
+        if (conversation is null || conversation.UserId != userId) return false;
+
+        // Messages must go first: the FK from DiscoveryMessages is Restrict.
+        await db.DiscoveryMessages.Where(m => m.ConversationId == conversationId).ExecuteDeleteAsync(cancellationToken);
+        db.DiscoveryConversations.Remove(conversation);
+        await db.SaveChangesAsync(cancellationToken);
+        await tx.CommitAsync(cancellationToken);
+        return true;
     }
 
     private async Task<DiscoveryConversationDetails?> LoadDetailsAsync(Guid userId, Guid conversationId, CancellationToken cancellationToken)
