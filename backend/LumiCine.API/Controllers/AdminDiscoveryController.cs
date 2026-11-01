@@ -17,4 +17,11 @@ public sealed class AdminDiscoveryController(IDiscoveryIndexAdminService index) 
     [ProducesResponseType(StatusCodes.Status403Forbidden)]
     public async Task<ActionResult<DiscoveryIndexStatus>> GetIndex(CancellationToken cancellationToken) =>
         Ok(await index.GetStatusAsync(cancellationToken));
+
+    [HttpPost("index/rebuild")]
+    [ProducesResponseType<DiscoveryRebuildResult>(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    public async Task<ActionResult<DiscoveryRebuildResult>> RebuildIndex(CancellationToken cancellationToken) =>
+        Ok(await index.RebuildAsync(cancellationToken));
 }
