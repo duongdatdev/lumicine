@@ -21,6 +21,8 @@ using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Options;
 using LumiCine.Application.Media;
 using LumiCine.Infrastructure.Media;
+using LumiCine.Application.Reporting;
+using LumiCine.Infrastructure.Reporting;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
@@ -97,6 +99,7 @@ public static class InfrastructureServiceCollectionExtensions
         services.AddScoped<IDiscoverySearchService, DiscoverySearchService>();
         services.AddScoped<IDiscoveryAnswerWriter, DiscoveryAnswerWriter>();
         services.AddScoped<IDiscoveryIndexAdminService, DiscoveryIndexAdminService>();
+        services.AddScoped<IAdminReportingService, AdminReportingService>();
 
         services.AddIdentityCore<ApplicationUser>(options =>
             {
