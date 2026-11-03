@@ -298,7 +298,7 @@ public sealed class DiscoveryConversationScenarioTests(PostgresDatabaseFixture f
         var (genreId, genreSlug) = await SeedGenreAsync(db, suffix);
         await AttachGenreAsync(db, seed.MovieId, genreId);
         var service = CreateService(db,
-            new ScriptedChatReply($$"""{"Intent":"adjust","DateFrom":"2026-11-14","DateTo":"2026-11-15","GenreSlugs":["{{genreSlug}}"]}"""),
+            new ScriptedChatReply($$"""{"Intent":"adjust","DateFrom":"2026-11-14","DateTo":"2026-11-15","GenreSlugs":["{{genreSlug}}"],"MovieNameText":"Thời Gian Vô Hình {{suffix}}"}"""),
             new ScriptedChatReply("Đã lưu khoảng cuối tuần cho bạn."),
             new ScriptedChatReply("""{"Intent":"adjust","TimeWindowStartMinutes":1320,"TimeWindowEndMinutes":120}"""),
             new ScriptedChatReply("Đã giới hạn khung giờ khuya cho bạn."));
