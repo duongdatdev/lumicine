@@ -101,6 +101,20 @@ builder.Services.AddOptions<RateLimiterOptions>().Configure<IOptions<DiscoveryRa
                 QueueLimit = 0,
                 AutoReplenishment = true
             })));
+// Both report exports share one five-per-minute bucket for each authenticated admin.
+builder.Services.AddOptions<RateLimiterOptions>().Configure(options =>
+    options.AddPolicy("AdminReportExportPerAdmin", httpContext =>
+        httpContext.User.IsInRole(LumiCine.Application.Accounts.RoleNames.Admin)
+            ? RateLimitPartition.GetFixedWindowLimiter(
+                httpContext.User.FindFirstValue(JwtRegisteredClaimNames.Sub) ?? "unknown-admin",
+                _ => new FixedWindowRateLimiterOptions
+                {
+                    PermitLimit = 5,
+                    Window = TimeSpan.FromMinutes(1),
+                    QueueLimit = 0,
+                    AutoReplenishment = true
+                })
+            : RateLimitPartition.GetNoLimiter("non-admin")));
 builder.Services.AddOpenApi(options =>
 {
     options.AddDocumentTransformer<OpenApiAuthTransformer>();
@@ -146,6 +160,20 @@ if (seedMode != SeedMode.None)
 var app = builder.Build();
 app.UseExceptionHandler();
 app.UseRouting();
+app.Use(async (context, next) =>
+{
+    var reportingRequest = context.Request.Path.StartsWithSegments("/api/admin/dashboard") ||
+                           context.Request.Path.StartsWithSegments("/api/admin/reports");
+    if (reportingRequest)
+    {
+        context.Response.OnStarting(() =>
+        {
+            context.Response.Headers.CacheControl = "no-store";
+            return Task.CompletedTask;
+        });
+    }
+    await next();
+});
 app.UseAuthentication();
 // Rate limiting runs after authentication so policies can partition by the signed-in user.
 app.UseRateLimiter();
