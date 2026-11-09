@@ -29,5 +29,6 @@ public sealed class CheckInLogConfiguration : IEntityTypeConfiguration<CheckInLo
         builder.HasIndex(x => new { x.StaffUserId, x.RequestId }).IsUnique();
         builder.HasIndex(x => x.ShowtimeId);
         builder.HasIndex(x => x.Result);
+        builder.HasIndex(x => x.LoggedAtUtc);
     }
 }

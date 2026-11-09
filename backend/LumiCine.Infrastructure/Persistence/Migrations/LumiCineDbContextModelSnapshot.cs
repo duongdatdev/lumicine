@@ -63,6 +63,8 @@ namespace LumiCine.Infrastructure.Persistence.Migrations
                     b.HasIndex("Code")
                         .IsUnique();
 
+                    b.HasIndex("CreatedAtUtc");
+
                     b.HasIndex("ShowtimeId");
 
                     b.HasIndex("UserId")
@@ -157,6 +159,8 @@ namespace LumiCine.Infrastructure.Persistence.Migrations
                     b.HasKey("Id");
 
                     b.HasIndex("BookingId");
+
+                    b.HasIndex("LoggedAtUtc");
 
                     b.HasIndex("Result");
 
@@ -256,6 +260,11 @@ namespace LumiCine.Infrastructure.Persistence.Migrations
                     b.HasIndex("MerchantReference")
                         .IsUnique();
 
+                    b.HasIndex("ProcessedAtUtc");
+
+                    b.HasIndex("RefundRecordedAtUtc")
+                        .HasFilter("\"RefundRecordedAtUtc\" IS NOT NULL");
+
                     b.HasIndex("VnPayTransactionId")
                         .IsUnique()
                         .HasFilter("\"VnPayTransactionId\" IS NOT NULL");
@@ -323,6 +332,11 @@ namespace LumiCine.Infrastructure.Persistence.Migrations
 
                     b.HasIndex("Code")
                         .IsUnique();
+
+                    b.HasIndex("IssuedAtUtc");
+
+                    b.HasIndex("UsedAtUtc")
+                        .HasFilter("\"UsedAtUtc\" IS NOT NULL");
 
                     b.ToTable("Tickets", null, t =>
                         {

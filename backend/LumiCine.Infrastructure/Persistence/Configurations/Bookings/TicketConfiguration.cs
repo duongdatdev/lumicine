@@ -23,5 +23,7 @@ public sealed class TicketConfiguration : IEntityTypeConfiguration<Ticket>
         builder.HasOne<BookingItem>().WithMany().HasForeignKey(x => x.BookingItemId).OnDelete(DeleteBehavior.Restrict);
         builder.HasIndex(x => x.BookingItemId).IsUnique();
         builder.HasIndex(x => x.Code).IsUnique();
+        builder.HasIndex(x => x.IssuedAtUtc);
+        builder.HasIndex(x => x.UsedAtUtc).HasFilter("\"UsedAtUtc\" IS NOT NULL");
     }
 }

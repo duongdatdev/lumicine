@@ -41,5 +41,7 @@ public sealed class PaymentConfiguration : IEntityTypeConfiguration<Payment>
         builder.HasIndex(x => x.BookingId, "IX_Payments_BookingId_Pending").IsUnique().HasFilter("\"Status\" = 'Pending'");
         builder.HasIndex(x => x.BookingId, "IX_Payments_BookingId_Fulfilled").IsUnique().HasFilter("\"ProcessingStatus\" = 'Fulfilled'");
         builder.HasIndex(x => new { x.Status, x.ExpiresAtUtc });
+        builder.HasIndex(x => x.ProcessedAtUtc);
+        builder.HasIndex(x => x.RefundRecordedAtUtc).HasFilter("\"RefundRecordedAtUtc\" IS NOT NULL");
     }
 }

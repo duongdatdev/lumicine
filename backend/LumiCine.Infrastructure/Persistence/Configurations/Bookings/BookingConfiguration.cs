@@ -35,5 +35,6 @@ public sealed class BookingConfiguration : IEntityTypeConfiguration<Booking>
         builder.HasIndex(x => x.UserId).IsUnique()
             .HasFilter("\"Status\" = 'Pending' AND \"RequestId\" IS NOT NULL");
         builder.HasIndex(x => new { x.Status, x.HoldExpiresAtUtc });
+        builder.HasIndex(x => x.CreatedAtUtc);
     }
 }
