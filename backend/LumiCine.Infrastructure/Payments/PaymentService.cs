@@ -126,6 +126,32 @@ public sealed class PaymentService(
         }
     }
 
+    public async Task<VnPayCallbackOutcome> ProcessVnPayReturnAsync(IReadOnlyDictionary<string, IReadOnlyList<string>> parameters, CancellationToken ct)
+    {
+        VnPayCallbackData data;
+        try
+        {
+            data = messages.ValidateCallback(parameters);
+        }
+        catch (VnPayCallbackException ex)
+        {
+            return new VnPayCallbackOutcome(ex.RspCode, ex.Message, null);
+        }
+
+        var payment = await db.Payments.AsNoTracking().SingleOrDefaultAsync(x => x.MerchantReference == data.TransactionReference, ct);
+        if (payment is null)
+            return new VnPayCallbackOutcome(VnPayResponseCodes.TransactionNotFound, "Transaction not found.", null);
+
+        var view = ToView(payment);
+        if (data.AmountMinor != VnPayAmount.ToMinorUnits(payment.Amount))
+            return new VnPayCallbackOutcome(VnPayResponseCodes.InvalidAmount, "Invalid amount.", view);
+
+        if (payment.Status != PaymentStatus.Pending)
+            return new VnPayCallbackOutcome(VnPayResponseCodes.AlreadyProcessed, "Order already processed.", view);
+
+        return new VnPayCallbackOutcome(data.ResponseCode, "Return callback verified.", view);
+    }
+
     private async Task<VnPayCallbackOutcome> ApplyResultAsync(Payment payment, VnPayCallbackData data, CancellationToken ct)
     {
         var succeeded = data.ResponseCode == VnPayResponseCodes.Success && data.TransactionStatus == VnPayResponseCodes.Success;

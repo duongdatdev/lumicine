@@ -43,6 +43,7 @@ public interface IPaymentService
     Task<BookingPaymentLink> CreateBookingPaymentAsync(Guid userId, Guid bookingId, CreateBookingPaymentRequest request, string clientIpAddress, CancellationToken cancellationToken);
     Task<PaymentView> GetOwnedAsync(Guid userId, Guid paymentId, CancellationToken cancellationToken);
     Task<VnPayCallbackOutcome> ApplyVnPayCallbackAsync(IReadOnlyDictionary<string, IReadOnlyList<string>> parameters, CancellationToken cancellationToken);
+    Task<VnPayCallbackOutcome> ProcessVnPayReturnAsync(IReadOnlyDictionary<string, IReadOnlyList<string>> parameters, CancellationToken cancellationToken);
     Task<VnPayReconcileResult> ReconcileAsync(Guid paymentId, CancellationToken cancellationToken);
     Task<PagedResult<AdminPaymentView>> ListForAdminAsync(AdminPaymentQuery query, CancellationToken cancellationToken);
     Task<AdminPaymentView> GetForAdminAsync(Guid paymentId, CancellationToken cancellationToken);

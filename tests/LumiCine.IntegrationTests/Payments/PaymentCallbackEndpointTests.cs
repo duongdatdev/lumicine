@@ -42,7 +42,7 @@ public sealed class PaymentCallbackEndpointTests(PostgresDatabaseFixture fixture
     }
 
     [Fact]
-    public async Task Return_before_ipn_fulfills_once_and_the_ipn_replay_is_reported()
+    public async Task Return_before_ipn_verifies_callback_and_ipn_fulfills()
     {
         using var factory = new ApiWebApplicationFactory(connectionString: fixture.ConnectionString);
         var (bookingId, txnRef, amountMinor, showtimeId, _, _) = await CreateBookingWithPaymentAsync(factory);
@@ -54,9 +54,9 @@ public sealed class PaymentCallbackEndpointTests(PostgresDatabaseFixture fixture
         Assert.Equal(HttpStatusCode.OK, returned.StatusCode);
         var returnResult = (await returned.Content.ReadFromJsonAsync<VnPayReturnResponse>())!;
         Assert.Equal(VnPayResponseCodes.Success, returnResult.RspCode);
-        Assert.Equal(PaymentProcessingStatus.Fulfilled.ToString(), returnResult.Payment!.ProcessingStatus);
+        Assert.Equal(PaymentProcessingStatus.None.ToString(), returnResult.Payment!.ProcessingStatus);
         Assert.Equal(HttpStatusCode.OK, ipn.StatusCode);
-        Assert.Equal(VnPayResponseCodes.AlreadyProcessed, JsonDocument.Parse(await ipn.Content.ReadAsStringAsync()).RootElement.GetProperty("RspCode").GetString());
+        Assert.Equal(VnPayResponseCodes.Success, JsonDocument.Parse(await ipn.Content.ReadAsStringAsync()).RootElement.GetProperty("RspCode").GetString());
         await using var db = fixture.CreateDbContext();
         Assert.Equal(BookingStatus.Confirmed, (await db.Bookings.SingleAsync(x => x.Id == bookingId)).Status);
         var itemIds = await db.BookingItems.Where(x => x.BookingId == bookingId).Select(x => x.Id).ToListAsync();

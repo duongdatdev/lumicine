@@ -3,7 +3,7 @@ namespace LumiCine.Infrastructure.Identity;
 public sealed class AccountLinksOptions
 {
     public const string SectionName = "AccountLinks";
-    public string BaseUrl { get; set; } = "https://localhost:7005";
+    public string BaseUrl { get; set; } = "https://localhost:5173";
 
     internal bool IsValid() =>
         Uri.TryCreate(BaseUrl, UriKind.Absolute, out var uri) &&

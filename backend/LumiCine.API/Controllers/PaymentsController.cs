@@ -32,7 +32,7 @@ public sealed class PaymentsController(IPaymentService payments) : ControllerBas
     [AllowAnonymous]
     public async Task<IActionResult> VnPayReturn(CancellationToken cancellationToken)
     {
-        var outcome = await ApplyCallbackSafelyAsync(cancellationToken);
+        var outcome = await payments.ProcessVnPayReturnAsync(CollectCallbackParameters(), cancellationToken);
         if (outcome.RspCode == VnPayResponseCodes.InvalidSignature)
             throw new ApiException(400, outcome.Message);
         if (outcome.RspCode == VnPayResponseCodes.TransactionNotFound)
