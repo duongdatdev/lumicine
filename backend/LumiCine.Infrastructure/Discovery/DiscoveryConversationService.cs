@@ -1,4 +1,5 @@
-﻿using LumiCine.Application.Common;
+﻿using System.Text.Json;
+using LumiCine.Application.Common;
 using LumiCine.Application.Discovery;
 using LumiCine.Domain.Discovery;
 using LumiCine.Infrastructure.Persistence;
@@ -219,11 +220,27 @@ public sealed class DiscoveryConversationService(
             .SingleOrDefaultAsync(c => c.Id == conversationId && c.UserId == userId, cancellationToken);
         if (conversation is null) return null;
 
-        var messages = await db.DiscoveryMessages.AsNoTracking()
+        var rows = await db.DiscoveryMessages.AsNoTracking()
             .Where(m => m.ConversationId == conversationId)
             .OrderBy(m => m.TurnNumber).ThenBy(m => m.Role)
-            .Select(m => new DiscoveryMessageView(m.TurnNumber, m.Role.ToString(), m.Content, m.CreatedAtUtc))
             .ToListAsync(cancellationToken);
+
+        var messages = rows.Select(m =>
+        {
+            DiscoveryChatResponse? response = null;
+            if (m.Role == DiscoveryMessageRole.Assistant && !string.IsNullOrWhiteSpace(m.ResponseJson))
+            {
+                try
+                {
+                    response = JsonSerializer.Deserialize<DiscoveryChatResponse>(m.ResponseJson);
+                }
+                catch
+                {
+                    // Degraded / malformed json fallback
+                }
+            }
+            return new DiscoveryMessageView(m.TurnNumber, m.Role.ToString(), m.Content, m.CreatedAtUtc, response);
+        }).ToList();
 
         var filters = DiscoveryFilters.Parse(conversation.FiltersJson);
         return new(conversation.Id, conversation.Version, conversation.TurnCount,

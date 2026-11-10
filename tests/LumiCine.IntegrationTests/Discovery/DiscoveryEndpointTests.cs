@@ -155,6 +155,18 @@ public sealed class DiscoveryEndpointTests(PostgresDatabaseFixture fixture)
         Assert.Equal(showtimeId, showtime.ShowtimeId);
         Assert.Equal(100_000m, showtime.Price);
         Assert.Equal(3, showtime.AvailableSeats);
+
+        using var getConversation = await client.GetAsync($"{Route}/{conversation.Id}");
+        Assert.Equal(HttpStatusCode.OK, getConversation.StatusCode);
+        var details = (await getConversation.Content.ReadFromJsonAsync<DiscoveryConversationDetails>())!;
+        Assert.Equal(2, details.Messages.Count);
+        var userMessage = Assert.Single(details.Messages, m => m.Role == "User");
+        var assistantMessage = Assert.Single(details.Messages, m => m.Role == "Assistant");
+        Assert.Null(userMessage.Response);
+        Assert.NotNull(assistantMessage.Response);
+        Assert.Equal(writerReply, assistantMessage.Response!.Answer);
+        var storedMovie = Assert.Single(assistantMessage.Response!.Movies);
+        Assert.Equal(movieId, storedMovie.MovieId);
     }
 
     [Fact]

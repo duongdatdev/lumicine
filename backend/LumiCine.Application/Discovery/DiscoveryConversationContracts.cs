@@ -22,7 +22,8 @@ public sealed record DiscoveryMessageView(
     int TurnNumber,
     string Role,
     string Content,
-    DateTime CreatedAtUtc);
+    DateTime CreatedAtUtc,
+    DiscoveryChatResponse? Response = null);
 
 /// <summary>Full conversation state: current filters plus the complete message history.</summary>
 public sealed record DiscoveryConversationDetails(
