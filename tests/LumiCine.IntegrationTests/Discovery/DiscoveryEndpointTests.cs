@@ -250,6 +250,26 @@ public sealed class DiscoveryEndpointTests(PostgresDatabaseFixture fixture)
         return (movie.Id, showtime.Id);
     }
 
+    [Fact]
+    public async Task Delete_removes_conversation_and_returns_204_and_foreign_returns_404()
+    {
+        using var factory = new ApiWebApplicationFactory(connectionString: fixture.ConnectionString);
+        using var client = await CreateClientAsync(factory);
+        using var otherClient = await CreateClientAsync(factory);
+
+        using var created = await client.PostAsync(Route, null);
+        var details = (await created.Content.ReadFromJsonAsync<DiscoveryConversationDetails>())!;
+
+        using var foreignDelete = await otherClient.DeleteAsync($"{Route}/{details.Id}");
+        Assert.Equal(HttpStatusCode.NotFound, foreignDelete.StatusCode);
+
+        using var ownDelete = await client.DeleteAsync($"{Route}/{details.Id}");
+        Assert.Equal(HttpStatusCode.NoContent, ownDelete.StatusCode);
+
+        using var getAfterDelete = await client.GetAsync($"{Route}/{details.Id}");
+        Assert.Equal(HttpStatusCode.NotFound, getAfterDelete.StatusCode);
+    }
+
     private async Task<HttpClient> CreateClientAsync(WebApplicationFactory<Program> factory, string[]? roles = null)
     {
         await using var db = fixture.CreateDbContext();

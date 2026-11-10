@@ -43,6 +43,19 @@ public sealed class DiscoveryConversationsController(IDiscoveryConversationServi
         await conversations.GetAsync(UserId, id, cancellationToken)
             ?? throw new ApiException(404, "Conversation not found.");
 
+    [HttpDelete("{id:guid}")]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    public async Task<IActionResult> Delete(Guid id, CancellationToken cancellationToken)
+    {
+        var deleted = await conversations.DeleteAsync(UserId, id, cancellationToken);
+        if (!deleted)
+            throw new ApiException(404, "Conversation not found.");
+
+        return NoContent();
+    }
+
     [HttpPost("{id:guid}/messages")]
     [ProducesResponseType<DiscoveryChatResponse>(StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
