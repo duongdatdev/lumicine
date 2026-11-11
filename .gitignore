@@ -30,3 +30,11 @@ Thumbs.db
 *.nupkg
 *.snupkg
 .idea/
+
+# Frontend
+**/node_modules/
+**/dist/
+**/.vite/
+frontend/lumicine-web/test-results/
+frontend/lumicine-web/playwright-report/
+
