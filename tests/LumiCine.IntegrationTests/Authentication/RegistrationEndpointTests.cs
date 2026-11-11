@@ -58,7 +58,7 @@ public sealed class RegistrationEndpointTests(PostgresDatabaseFixture fixture)
         var message = Assert.Single(emailSender.Messages);
         Assert.Equal(user.Email, message.To);
         Assert.Equal("Confirm your LumiCine email", message.Subject);
-        Assert.Contains("https://localhost:7005/account/confirm-email", message.Body, StringComparison.Ordinal);
+        Assert.Contains("https://localhost:5173/account/confirm-email", message.Body, StringComparison.Ordinal);
         Assert.DoesNotContain("SecurePass123", message.Body, StringComparison.Ordinal);
     }
 
