@@ -68,8 +68,9 @@ public sealed class AdminUsersEndpointTests(PostgresDatabaseFixture fixture)
         using var factory = CreateFactory();
         using var client = factory.CreateClient();
         var admin = await CreateUserAsync(factory, RoleNames.Admin);
-        var newest = await CreateUserAsync(factory, RoleNames.Customer, DateTime.UtcNow.AddYears(1).AddSeconds(1));
-        var next = await CreateUserAsync(factory, RoleNames.Staff, DateTime.UtcNow.AddYears(1));
+        var nextCreatedAt = DateTime.UtcNow.AddYears(1);
+        var newest = await CreateUserAsync(factory, RoleNames.Customer, nextCreatedAt.AddSeconds(1));
+        var next = await CreateUserAsync(factory, RoleNames.Staff, nextCreatedAt);
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", admin.Token);
 
         using (var defaultResponse = await client.GetAsync("/api/admin/users"))

@@ -17,9 +17,13 @@ using System.Threading.RateLimiting;
 
 var seedMode = StartupCommandLine.ConsumeSeedFlags(args, out var builderArgs);
 var builder = WebApplication.CreateBuilder(builderArgs);
-if (seedMode == SeedMode.Demo && !builder.Environment.IsDevelopment())
+if (seedMode is SeedMode.Demo or SeedMode.Acceptance && !builder.Environment.IsDevelopment())
 {
-    throw new InvalidOperationException("--seed-demo is available only in the Development environment.");
+    throw new InvalidOperationException("Demo and acceptance seeds are available only in the Development environment.");
+}
+if (seedMode == SeedMode.Acceptance && !StartupCommandLine.IsSafeAcceptanceConnectionString(builder.Configuration.GetConnectionString("LumiCine")))
+{
+    throw new InvalidOperationException("--seed-acceptance requires ConnectionStrings:LumiCine to target 127.0.0.1:55439 and a lumi_e2e_* database.");
 }
 builder.Logging.AddJsonConsole(options =>
 {
@@ -121,6 +125,7 @@ builder.Services.AddOpenApi(options =>
     options.AddOperationTransformer<OpenApiAuthTransformer>();
 });
 builder.Services.AddInfrastructure(builder.Configuration);
+builder.Services.AddScoped<AcceptanceUserSeeder>();
 if (seedMode == SeedMode.None)
 {
     builder.Services.AddJwtAuthentication();
@@ -138,6 +143,7 @@ if (seedMode == SeedMode.None)
 else
 {
     builder.Services.AddAuthentication();
+    builder.Services.AddSingleton<IShowtimeAvailabilityNotifier, NoOpShowtimeAvailabilityNotifier>();
 }
 
 if (seedMode != SeedMode.None)
@@ -149,10 +155,15 @@ if (seedMode != SeedMode.None)
         var created = await scope.ServiceProvider.GetRequiredService<AdminBootstrapper>().SeedAsync(builder.Configuration);
         Console.WriteLine(created ? "Bootstrap admin created." : "Bootstrap admin already exists.");
     }
-    else
+    else if (seedMode == SeedMode.Demo)
     {
         await scope.ServiceProvider.GetRequiredService<DemoSeeder>().SeedAsync();
         Console.WriteLine("Demo catalog and upcoming showtimes seeded.");
+    }
+    else
+    {
+        await scope.ServiceProvider.GetRequiredService<AcceptanceUserSeeder>().SeedAsync(builder.Configuration);
+        Console.WriteLine("Acceptance users seeded.");
     }
     return;
 }

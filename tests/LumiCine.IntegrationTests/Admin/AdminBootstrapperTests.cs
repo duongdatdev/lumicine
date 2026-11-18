@@ -236,4 +236,16 @@ public sealed class StartupCommandLineTests
         Assert.Equal(["--urls", "http://localhost:5000"], builderArgs);
         Assert.Throws<ArgumentException>(() => StartupCommandLine.ConsumeSeedFlags(["--seed-admin", "--seed-demo"], out _));
     }
+
+    [Fact]
+    public void Acceptance_seed_flag_is_consumed_and_requires_an_isolated_database_name()
+    {
+        var mode = StartupCommandLine.ConsumeSeedFlags(["--seed-acceptance", "--urls", "http://localhost:5000"], out var builderArgs);
+
+        Assert.Equal(SeedMode.Acceptance, mode);
+        Assert.Equal(["--urls", "http://localhost:5000"], builderArgs);
+        Assert.Throws<ArgumentException>(() => StartupCommandLine.ConsumeSeedFlags(["--seed-acceptance", "--seed-demo"], out _));
+        Assert.True(StartupCommandLine.IsSafeAcceptanceConnectionString("Host=127.0.0.1;Port=55439;Database=lumi_e2e_case;Username=lumicine_test"));
+        Assert.False(StartupCommandLine.IsSafeAcceptanceConnectionString("Host=127.0.0.1;Port=55439;Database=postgres;Username=lumicine_test"));
+    }
 }
