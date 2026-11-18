@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { adminApi } from '../../api/admin';
 import type { AdminUserSummary } from '../../api/types';
@@ -13,8 +14,15 @@ import { formatDateUtc7 } from '../../lib/utils';
 import { Users, Shield, UserCheck, UserX, RefreshCw } from 'lucide-react';
 
 export const AdminUsersPage: React.FC = () => {
-  const [page, setPage] = useState(1);
+  const [searchParams, setSearchParams] = useSearchParams();
+  const page = Math.max(1, Number.parseInt(searchParams.get('page') || '1', 10) || 1);
   const [actionError, setActionError] = useState<unknown>(null);
+  const setPage = (nextPage: number) => {
+    const params = new URLSearchParams(searchParams);
+    if (nextPage > 1) params.set('page', String(nextPage));
+    else params.delete('page');
+    setSearchParams(params);
+  };
 
   const { data, isLoading, error, refetch } = useQuery({
     queryKey: ['adminUsers', page],
@@ -74,7 +82,7 @@ export const AdminUsersPage: React.FC = () => {
         <LoadingState message="Đang tải danh sách tài khoản..." />
       ) : error ? (
         <ErrorAlert error={error} title="Không thể tải người dùng" />
-      ) : !data?.users || data.users.length === 0 ? (
+      ) : !data?.items || data.items.length === 0 ? (
         <EmptyState title="Chưa có người dùng nào" />
       ) : (
         <Card className="p-0 overflow-hidden border-border">
@@ -91,7 +99,7 @@ export const AdminUsersPage: React.FC = () => {
                 </tr>
               </thead>
               <tbody className="divide-y divide-border">
-                {data.users.map((user) => {
+                {data.items.map((user) => {
                   const isAdmin = user.roles.includes('Admin');
                   const isStaff = user.roles.includes('Staff');
 

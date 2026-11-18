@@ -4,6 +4,8 @@ import React from 'react';
 import { BrowserRouter } from 'react-router-dom';
 import { StaffCheckInPage } from '../features/staff/StaffCheckInPage';
 import { staffApi } from '../api/staff';
+import { adminApi } from '../api/admin';
+import { toUtc7Offset, utcToUtc7Input } from '../features/staff/StaffSchedulePage';
 
 describe('Staff Ticket Check-In', () => {
   afterEach(() => vi.restoreAllMocks());
@@ -69,5 +71,25 @@ describe('Staff Ticket Check-In', () => {
 
     expect(screen.getByText('VÉ ĐÃ QUA SỬ DỤNG!')).toBeInTheDocument();
     expect(screen.getByText('LumiCine Demo')).toBeInTheDocument();
+  });
+});
+
+describe('Staff schedule time handling', () => {
+  afterEach(() => vi.restoreAllMocks());
+
+  it('keeps datetime-local values anchored to UTC+7 when round-tripping UTC', () => {
+    expect(toUtc7Offset('2026-11-17T19:30')).toBe('2026-11-17T12:30:00.000Z');
+    expect(utcToUtc7Input('2026-11-17T12:30:00Z')).toBe('2026-11-17T19:30');
+  });
+
+  it('sends the management contract field startAt', async () => {
+    let requestBody = '';
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (_input, init) => {
+      requestBody = String(init?.body);
+      return Response.json({ id: 'showtime-1' });
+    });
+    await adminApi.createShowtime({ movieId: 'movie-1', roomId: 'room-1', startAt: toUtc7Offset('2026-11-17T19:30'), basePrice: 80000 });
+    expect(JSON.parse(requestBody)).toMatchObject({ startAt: '2026-11-17T12:30:00.000Z' });
+    expect(JSON.parse(requestBody)).not.toHaveProperty('startAtUtc');
   });
 });

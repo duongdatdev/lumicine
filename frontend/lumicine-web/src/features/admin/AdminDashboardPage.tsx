@@ -1,6 +1,8 @@
 import React, { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
+import { useSearchParams } from 'react-router-dom';
 import { adminApi } from '../../api/admin';
+import type { ShowtimeReportRow } from '../../api/types';
 import { Card } from '../../components/ui/Card';
 import { Button } from '../../components/ui/Button';
 import { Badge } from '../../components/ui/Badge';
@@ -8,6 +10,7 @@ import { Input } from '../../components/ui/Input';
 import { Tabs } from '../../components/ui/Tabs';
 import { LoadingState } from '../../components/common/LoadingState';
 import { ErrorAlert } from '../../components/common/ErrorAlert';
+import { Pagination } from '../../components/ui/Pagination';
 import { formatVND, formatDateUtc7 } from '../../lib/utils';
 import {
   DollarSign,
@@ -33,15 +36,26 @@ import {
 } from 'recharts';
 
 export const AdminDashboardPage: React.FC = () => {
-  // Default date filter: past 30 days
-  const today = new Date();
-  const past30 = new Date();
-  past30.setDate(today.getDate() - 29);
-
-  const [fromDate, setFromDate] = useState<string>(past30.toISOString().split('T')[0]);
-  const [toDate, setToDate] = useState<string>(today.toISOString().split('T')[0]);
-  const [groupBy, setGroupBy] = useState<'day' | 'movie' | 'cinema' | 'showtime'>('day');
+  const [searchParams, setSearchParams] = useSearchParams();
+  const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Ho_Chi_Minh', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
+  const past30 = new Date(`${today}T00:00:00Z`);
+  past30.setUTCDate(past30.getUTCDate() - 29);
+  const fromDate = searchParams.get('fromDate') || past30.toISOString().slice(0, 10);
+  const toDate = searchParams.get('toDate') || today;
+  const movieId = searchParams.get('movieId') || '';
+  const cinemaId = searchParams.get('cinemaId') || '';
+  const showtimePage = Math.max(1, Number(searchParams.get('page')) || 1);
+  const groupBy = (searchParams.get('groupBy') as 'day' | 'movie' | 'cinema' | 'showtime') || 'day';
   const [isExporting, setIsExporting] = useState(false);
+  const [exportError, setExportError] = useState<unknown>(null);
+  const updateParams = (updates: Record<string, string>) => {
+    const params = new URLSearchParams(searchParams);
+    for (const [key, value] of Object.entries(updates)) value ? params.set(key, value) : params.delete(key);
+    setSearchParams(params);
+  };
+
+  const { data: movies } = useQuery({ queryKey: ['adminReportMovies'], queryFn: () => adminApi.getMovies({ pageSize: 100 }) });
+  const { data: cinemas } = useQuery({ queryKey: ['adminReportCinemas'], queryFn: () => adminApi.getCinemas(1, 100) });
 
   // Summary KPI Query
   const {
@@ -50,14 +64,14 @@ export const AdminDashboardPage: React.FC = () => {
     error: summaryError,
     refetch: refetchSummary,
   } = useQuery({
-    queryKey: ['adminDashboardSummary', { fromDate, toDate }],
-    queryFn: () => adminApi.getDashboardSummary({ fromDate, toDate }),
+    queryKey: ['adminDashboardSummary', { fromDate, toDate, movieId, cinemaId }],
+    queryFn: () => adminApi.getDashboardSummary({ fromDate, toDate, movieId: movieId || undefined, cinemaId: cinemaId || undefined }),
   });
 
   // Operations KPI Query
   const { data: operations, refetch: refetchOperations } = useQuery({
-    queryKey: ['adminDashboardOperations'],
-    queryFn: () => adminApi.getDashboardOperations(),
+    queryKey: ['adminDashboardOperations', { movieId, cinemaId }],
+    queryFn: () => adminApi.getDashboardOperations({ movieId: movieId || undefined, cinemaId: cinemaId || undefined }),
   });
 
   // Revenue Report Query
@@ -67,16 +81,21 @@ export const AdminDashboardPage: React.FC = () => {
     error: revenueError,
     refetch: refetchRevenue,
   } = useQuery({
-    queryKey: ['adminRevenueReport', { fromDate, toDate, groupBy }],
-    queryFn: () => adminApi.getRevenueReport({ fromDate, toDate, groupBy, pageSize: 50 }),
+    queryKey: ['adminRevenueReport', { fromDate, toDate, movieId, cinemaId, groupBy }],
+    queryFn: () => adminApi.getRevenueReport({ fromDate, toDate, movieId: movieId || undefined, cinemaId: cinemaId || undefined, groupBy, pageSize: 50 }),
+  });
+
+  const { data: showtimesReport, isLoading: isShowtimesLoading, error: showtimesError } = useQuery({
+    queryKey: ['adminShowtimesReport', { fromDate, toDate, movieId, cinemaId, showtimePage }],
+    queryFn: () => adminApi.getShowtimesReport({ fromDate, toDate, movieId: movieId || undefined, cinemaId: cinemaId || undefined, page: showtimePage, pageSize: 20 }),
   });
 
   const handleExportRevenue = async () => {
     setIsExporting(true);
     try {
-      await adminApi.exportRevenueReportCsv({ fromDate, toDate, groupBy });
-    } catch {
-      // ignore
+      await adminApi.exportRevenueReportCsv({ fromDate, toDate, movieId: movieId || undefined, cinemaId: cinemaId || undefined, groupBy });
+    } catch (error) {
+      setExportError(error);
     } finally {
       setIsExporting(false);
     }
@@ -85,9 +104,9 @@ export const AdminDashboardPage: React.FC = () => {
   const handleExportShowtimes = async () => {
     setIsExporting(true);
     try {
-      await adminApi.exportShowtimesReportCsv({ fromDate, toDate });
-    } catch {
-      // ignore
+      await adminApi.exportShowtimesReportCsv({ fromDate, toDate, movieId: movieId || undefined, cinemaId: cinemaId || undefined });
+    } catch (error) {
+      setExportError(error);
     } finally {
       setIsExporting(false);
     }
@@ -129,6 +148,7 @@ export const AdminDashboardPage: React.FC = () => {
           </Button>
         </div>
       </div>
+      {exportError ? <ErrorAlert error={exportError} /> : null}
 
       {/* Date Filter Bar */}
       <Card className="p-4 bg-background-surface">
@@ -137,27 +157,55 @@ export const AdminDashboardPage: React.FC = () => {
             label="Từ ngày"
             type="date"
             value={fromDate}
-            onChange={(e) => setFromDate(e.target.value)}
+            onChange={(e) => updateParams({ fromDate: e.target.value, page: '' })}
             className="w-44"
           />
           <Input
             label="Đến ngày"
             type="date"
             value={toDate}
-            onChange={(e) => setToDate(e.target.value)}
+            onChange={(e) => updateParams({ toDate: e.target.value, page: '' })}
             className="w-44"
           />
+          <label className="w-52 space-y-1.5 text-sm font-medium">Phim
+            <select className="flex h-10 w-full rounded-lg border border-border bg-background-surface px-3 text-sm" value={movieId} onChange={(e) => updateParams({ movieId: e.target.value, page: '' })}>
+              <option value="">Tất cả phim</option>{movies?.items.map((movie) => <option key={movie.id} value={movie.id}>{movie.title}</option>)}
+            </select>
+          </label>
+          <label className="w-52 space-y-1.5 text-sm font-medium">Rạp
+            <select className="flex h-10 w-full rounded-lg border border-border bg-background-surface px-3 text-sm" value={cinemaId} onChange={(e) => updateParams({ cinemaId: e.target.value, page: '' })}>
+              <option value="">Tất cả rạp</option>{cinemas?.items.map((cinema) => <option key={cinema.id} value={cinema.id}>{cinema.name}</option>)}
+            </select>
+          </label>
           <Button
             variant="primary"
             onClick={() => {
               refetchSummary();
               refetchRevenue();
               refetchOperations();
+              updateParams({ page: '' });
             }}
           >
             <RefreshCw className="w-4 h-4 mr-1.5" /> Áp dụng bộ lọc
           </Button>
         </div>
+      </Card>
+
+      <Card className="p-0 overflow-hidden">
+        <div className="p-4 border-b border-border bg-background-subtle flex flex-wrap items-center justify-between gap-2">
+          <div><h2 className="font-heading font-bold text-lg text-foreground">Báo cáo suất chiếu</h2><p className="text-sm text-foreground-muted">{showtimesReport?.totalCount ?? 0} suất chiếu trong khoảng đã chọn</p></div>
+          {showtimesReport && <p className="text-sm text-foreground-muted">Sức chứa {showtimesReport.totals.capacity} · Đã bán {showtimesReport.totals.soldSeats} · Lấp đầy {showtimesReport.totals.occupancyRate.toFixed(1)}%</p>}
+        </div>
+        {isShowtimesLoading ? <LoadingState message="Đang tải báo cáo suất chiếu..." /> : showtimesError ? <ErrorAlert error={showtimesError} /> : (
+          <>
+            <div className="overflow-x-auto"><table className="w-full text-left text-sm">
+              <thead className="bg-background-subtle/50 border-b border-border text-xs font-semibold text-foreground-muted uppercase"><tr><th className="px-4 py-3">Suất chiếu</th><th className="px-4 py-3">Rạp / Phòng</th><th className="px-4 py-3">Bắt đầu</th><th className="px-4 py-3">Trạng thái</th><th className="px-4 py-3 text-right">Ghế bán / sức chứa</th><th className="px-4 py-3 text-right">Lấp đầy</th><th className="px-4 py-3 text-right">Vé đã check-in</th><th className="px-4 py-3 text-right">Doanh thu vé</th></tr></thead>
+              <tbody className="divide-y divide-border">{showtimesReport?.rows.map((row: ShowtimeReportRow) => <tr key={row.showtimeId} className="hover:bg-background-subtle/40"><td className="px-4 py-3 font-medium">{row.movieTitle}</td><td className="px-4 py-3">{row.cinemaName} · {row.roomName}</td><td className="px-4 py-3">{formatDateUtc7(row.startAtUtc)}</td><td className="px-4 py-3"><Badge>{row.status}</Badge></td><td className="px-4 py-3 text-right">{row.soldSeats} / {row.capacity}</td><td className="px-4 py-3 text-right">{row.occupancyRate.toFixed(1)}%</td><td className="px-4 py-3 text-right">{row.usedTickets} / {row.validTickets}</td><td className="px-4 py-3 text-right">{formatVND(row.issuedTicketAmount)}</td></tr>)}</tbody>
+            </table></div>
+            {!showtimesReport?.rows.length && <p className="p-8 text-center text-sm text-foreground-muted">Không có suất chiếu trong khoảng thời gian này.</p>}
+            {showtimesReport && <Pagination currentPage={showtimesReport.page} totalPages={Math.ceil(showtimesReport.totalCount / showtimesReport.pageSize)} onPageChange={(page) => updateParams({ page: page > 1 ? String(page) : '' })} />}
+          </>
+        )}
       </Card>
 
       {/* Operations Warning Bar if any pending action required */}
@@ -288,7 +336,7 @@ export const AdminDashboardPage: React.FC = () => {
           <Tabs
             tabs={groupByTabs}
             activeTab={groupBy}
-            onChange={(t) => setGroupBy(t as typeof groupBy)}
+            onChange={(t) => updateParams({ groupBy: t as string })}
           />
         </div>
 

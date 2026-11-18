@@ -83,6 +83,17 @@ describe('Admin Workspace Features', () => {
         failedPaymentCount: 2,
       },
     });
+    vi.spyOn(adminApi, 'getShowtimesReport').mockResolvedValueOnce({
+      metadata: { fromDate: '2026-10-18', toDate: '2026-11-17', generatedAtUtc: new Date().toISOString() },
+      rows: [{
+        showtimeId: 'show-1', movieId: 'movie-1', movieTitle: 'Dune', cinemaId: 'cinema-1', cinemaName: 'Lumi',
+        roomId: 'room-1', roomName: 'Room 1', startAtUtc: '2026-11-17T12:00:00Z', endAtUtc: '2026-11-17T14:00:00Z',
+        status: 'Scheduled', capacity: 100, soldSeats: 60, heldSeats: 5, availableSeats: 35, occupancyRate: 60,
+        validTickets: 60, usedTickets: 30, checkInRate: 50, issuedTicketAmount: 900000,
+      }],
+      totalCount: 1, page: 1, pageSize: 20,
+      totals: { capacity: 100, soldSeats: 60, heldSeats: 5, availableSeats: 35, occupancyRate: 60, validTickets: 60, usedTickets: 30, checkInRate: 50, issuedTicketAmount: 900000 },
+    });
 
     const testQueryClient = new QueryClient();
 
@@ -104,6 +115,8 @@ describe('Admin Workspace Features', () => {
     expect(screen.getByText('520 vé')).toBeInTheDocument();
     expect(screen.getByText('350')).toBeInTheDocument();
     expect(screen.getByText(/2 giao dịch cần đối soát hoàn tiền/i)).toBeInTheDocument();
-    expect(await screen.findByRole('cell', { name: '17/11/2026' })).toBeInTheDocument();
+    expect(await screen.findAllByRole('cell', { name: '17/11/2026' })).toHaveLength(2);
+    expect(await screen.findByText('Dune')).toBeInTheDocument();
+    expect(screen.getByText('60.0%')).toBeInTheDocument();
   });
 });

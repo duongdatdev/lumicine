@@ -5,7 +5,7 @@ import { catalogApi } from '../../api/catalog';
 import { bookingApi } from '../../api/booking';
 import { createShowtimeHubConnection, joinShowtime, leaveShowtime } from '../../api/realtime';
 import type { ShowtimeSeatSummary, BookingDetails } from '../../api/types';
-import { HubConnection, HubConnectionState } from '@microsoft/signalr';
+import type { HubConnection } from '@microsoft/signalr';
 import { ApiError } from '../../api/client';
 import { useAuth } from '../../auth/useAuth';
 import { Button } from '../../components/ui/Button';
@@ -16,7 +16,7 @@ import { ErrorAlert } from '../../components/common/ErrorAlert';
 import { LoadingState } from '../../components/common/LoadingState';
 import { CountdownTimer } from '../../components/common/CountdownTimer';
 import { formatVND, formatTimeUtc7, formatDateUtc7, generateUUID, cn } from '../../lib/utils';
-import { Film, Clock, MapPin, Tv, AlertCircle, RefreshCw, CheckCircle2, Wifi, WifiOff } from 'lucide-react';
+import { Film, Clock, MapPin, Tv, RefreshCw, Wifi, WifiOff } from 'lucide-react';
 
 const MAX_SEATS = 8;
 
@@ -24,11 +24,11 @@ export const ShowtimeSeatSelectionPage: React.FC = () => {
   const { id: showtimeId } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
-  const { isAuthenticated, user } = useAuth();
+  const { isAuthenticated } = useAuth();
 
   // Local selected seat IDs
   const [selectedSeatIds, setSelectedSeatIds] = useState<string[]>([]);
-  const [bookingRequestId, setBookingRequestId] = useState<string>(() => generateUUID());
+  const bookingRequestRef = useRef<{ payload: string; requestId: string } | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorNotice, setErrorNotice] = useState<string | null>(null);
   const [apiError, setApiError] = useState<unknown>(null);
@@ -37,6 +37,12 @@ export const ShowtimeSeatSelectionPage: React.FC = () => {
 
   // Active pending booking (if user already holds seats)
   const [existingPendingBooking, setExistingPendingBooking] = useState<BookingDetails | null>(null);
+
+  useEffect(() => {
+    setSelectedSeatIds([]);
+    setExistingPendingBooking(null);
+    bookingRequestRef.current = null;
+  }, [showtimeId]);
 
   // 1. Fetch Showtime Info
   const { data: showtime, isLoading: isShowtimeLoading } = useQuery({
@@ -62,21 +68,29 @@ export const ShowtimeSeatSelectionPage: React.FC = () => {
 
   // Check if user has an existing pending booking for this showtime
   useEffect(() => {
-    if (!isAuthenticated || !showtimeId) return;
+    let active = true;
+    setExistingPendingBooking(null);
+    if (!isAuthenticated || !showtimeId) return () => { active = false; };
 
     bookingApi
       .listBookings({ status: 'Pending', pageSize: 10 })
       .then((res) => {
-        const found = res.items.find((b) => b.showtimeId === showtimeId && b.status === 'Pending');
+        if (!active) return;
+        const found = res.items.find((b) => b.status === 'Pending');
         if (found) {
           setExistingPendingBooking(found);
-          // Preselect seats of this booking
-          setSelectedSeatIds(found.seats.map((s) => s.seatId));
+          if (found.showtimeId === showtimeId) {
+            // Only preselect seats that belong to the showtime currently displayed.
+            setSelectedSeatIds(found.seats.map((s) => s.seatId));
+          } else {
+            setSelectedSeatIds([]);
+          }
         }
       })
       .catch(() => {
         // ignore
       });
+    return () => { active = false; };
   }, [isAuthenticated, showtimeId]);
 
   // 3. Realtime SignalR Connection setup
@@ -91,6 +105,11 @@ export const ShowtimeSeatSelectionPage: React.FC = () => {
     const handleSeatAvailabilityChanged = () => {
       refetchSeats();
     };
+    const joinAndRefreshSnapshot = async () => {
+      await joinShowtime(hub, showtimeId);
+      await queryClient.cancelQueries({ queryKey: ['showtimeSeats', showtimeId], exact: true });
+      await refetchSeats();
+    };
 
     hub.on('SeatAvailabilityChanged', handleSeatAvailabilityChanged);
 
@@ -100,8 +119,7 @@ export const ShowtimeSeatSelectionPage: React.FC = () => {
 
     hub.onreconnected(async () => {
       setIsRealtimeConnected(true);
-      await joinShowtime(hub, showtimeId);
-      refetchSeats();
+      await joinAndRefreshSnapshot();
     });
 
     hub.onclose(() => {
@@ -112,7 +130,7 @@ export const ShowtimeSeatSelectionPage: React.FC = () => {
       .start()
       .then(async () => {
         setIsRealtimeConnected(true);
-        await joinShowtime(hub, showtimeId);
+        await joinAndRefreshSnapshot();
       })
       .catch(() => {
         setIsRealtimeConnected(false);
@@ -138,7 +156,7 @@ export const ShowtimeSeatSelectionPage: React.FC = () => {
       });
       hubRef.current = null;
     };
-  }, [showtimeId, refetchSeats]);
+  }, [showtimeId, refetchSeats, queryClient]);
 
   // Group seats by row
   const rowsMap = useMemo(() => {
@@ -195,9 +213,10 @@ export const ShowtimeSeatSelectionPage: React.FC = () => {
   }, [seats, selectedSeatIds]);
 
   const totalAmount = useMemo(() => {
-    if (existingPendingBooking) return existingPendingBooking.totalAmount;
+    if (existingPendingBooking && existingPendingBooking.showtimeId === showtimeId) return existingPendingBooking.totalAmount;
     return selectedSeats.reduce((sum, s) => sum + s.price, 0);
-  }, [existingPendingBooking, selectedSeats]);
+  }, [existingPendingBooking, selectedSeats, showtimeId]);
+  const pendingForCurrentShowtime = existingPendingBooking?.showtimeId === showtimeId;
 
   // Submit Booking Hold
   const handleCreateBooking = async () => {
@@ -218,8 +237,12 @@ export const ShowtimeSeatSelectionPage: React.FC = () => {
     setErrorNotice(null);
 
     try {
+      const payload = JSON.stringify({ showtimeId, seatIds: [...selectedSeatIds].sort() });
+      if (bookingRequestRef.current?.payload !== payload) {
+        bookingRequestRef.current = { payload, requestId: generateUUID() };
+      }
       const booking = await bookingApi.createBooking({
-        requestId: bookingRequestId,
+        requestId: bookingRequestRef.current.requestId,
         showtimeId: showtimeId!,
         seatIds: selectedSeatIds,
       });
@@ -253,7 +276,7 @@ export const ShowtimeSeatSelectionPage: React.FC = () => {
       await bookingApi.cancelBooking(existingPendingBooking.id);
       setExistingPendingBooking(null);
       setSelectedSeatIds([]);
-      setBookingRequestId(generateUUID());
+      bookingRequestRef.current = null;
       refetchSeats();
     } catch (err) {
       setApiError(err);
@@ -324,10 +347,14 @@ export const ShowtimeSeatSelectionPage: React.FC = () => {
 
       {/* Existing Pending Booking Hold Alert */}
       {existingPendingBooking && (
-        <Alert variant="warning" title="Bạn đang có đơn giữ chỗ chờ thanh toán cho suất này">
+        <Alert
+          variant="warning"
+          title={pendingForCurrentShowtime ? 'Bạn đang có đơn giữ chỗ chờ thanh toán cho suất này' : 'Bạn đang có đơn giữ chỗ chờ thanh toán cho suất chiếu khác'}
+        >
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mt-2">
             <div className="space-y-1">
               <p>Mã đặt vé: <strong>{existingPendingBooking.code}</strong></p>
+              {!pendingForCurrentShowtime && <p>Phim {existingPendingBooking.movieTitle} tại {existingPendingBooking.cinemaName} — {existingPendingBooking.roomName}. Hãy tiếp tục thanh toán hoặc hủy đơn này trước khi chọn ghế cho suất khác.</p>}
               {existingPendingBooking.holdExpiresAtUtc && (
                 <CountdownTimer
                   expiresAtUtc={existingPendingBooking.holdExpiresAtUtc}
@@ -512,7 +539,7 @@ export const ShowtimeSeatSelectionPage: React.FC = () => {
             <div className="text-right">
               <span className="text-xs text-foreground-muted block">Tổng tiền</span>
               <span className="font-heading font-black text-2xl text-primary block">
-                {formatVND(totalAmount)}
+                {existingPendingBooking && !pendingForCurrentShowtime ? '—' : formatVND(totalAmount)}
               </span>
             </div>
 

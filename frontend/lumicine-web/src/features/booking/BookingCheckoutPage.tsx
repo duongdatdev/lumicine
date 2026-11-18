@@ -39,13 +39,17 @@ export const BookingCheckoutPage: React.FC = () => {
 
     try {
       const link = await bookingApi.createVnPayPayment(bookingId, paymentRequestId);
+      const paymentUrl = new URL(link.paymentUrl);
+      if (paymentUrl.protocol !== 'https:' || paymentUrl.hostname !== 'sandbox.vnpayment.vn' || paymentUrl.port || paymentUrl.username || paymentUrl.password || paymentUrl.pathname !== '/paymentv2/vpcpay.html') {
+        throw new Error('Đường dẫn thanh toán VNPay không hợp lệ. Vui lòng thử lại sau.');
+      }
       // Store paymentId and requestId in sessionStorage for recovery after redirect
       sessionStorage.setItem('lumicine_last_payment_id', link.paymentId);
       sessionStorage.setItem('lumicine_last_booking_id', bookingId);
       sessionStorage.setItem('lumicine_last_payment_request_id', paymentRequestId);
 
       // Redirect to VNPay Sandbox
-      window.location.href = link.paymentUrl;
+      window.location.assign(paymentUrl.href);
     } catch (err) {
       setApiError(err);
       setIsProcessingPayment(false);

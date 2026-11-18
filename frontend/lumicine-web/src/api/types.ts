@@ -60,6 +60,7 @@ export interface MovieSummary {
 
 export interface CinemaSummary {
   id: string;
+  code: string;
   name: string;
   city: string;
   address: string;
@@ -69,8 +70,9 @@ export interface CinemaSummary {
 export interface RoomSummary {
   id: string;
   cinemaId: string;
+  code: string;
   name: string;
-  seatCapacity: number;
+  seatCount: number;
   isActive: boolean;
 }
 
@@ -101,9 +103,9 @@ export interface ShowtimeSeatSummary {
 }
 
 export interface RoomSeatLayoutRow {
-  rowLabel: string;
-  seatType: string;
-  seatCount: number;
+  label: string;
+  standardSeats: number;
+  vipSeats: number;
 }
 
 export interface AdminSeatSummary {
@@ -433,7 +435,7 @@ export interface AdminUserSummary {
 }
 
 export interface AdminUserPage {
-  users: AdminUserSummary[];
+  items: AdminUserSummary[];
   totalCount: number;
   page: number;
   pageSize: number;
@@ -441,13 +443,14 @@ export interface AdminUserPage {
 
 // Admin Discovery
 export interface DiscoveryIndexStatus {
-  movieCount: number;
-  embeddedMovieCount: number;
-  isStale: boolean;
-  lastBuiltAtUtc?: string | null;
+  indexedCount: number;
+  pendingCount: number;
+  failedCount: number;
+  totalMovies: number;
+  generatedAtUtc: string;
 }
 
 export interface DiscoveryRebuildResult {
-  indexedCount: number;
-  completedAtUtc: string;
+  queuedCount: number;
+  queuedAtUtc: string;
 }

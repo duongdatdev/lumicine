@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useRef, useCallback } from 'react';
-import { useLocation, Link, useNavigate } from 'react-router-dom';
+import { useLocation, Link } from 'react-router-dom';
 import { paymentsApi } from '../../api/payments';
 import { bookingApi } from '../../api/booking';
 import type { PaymentView, BookingDetails } from '../../api/types';
@@ -18,14 +18,11 @@ import {
   AlertTriangle,
   RefreshCw,
   Ticket,
-  ArrowRight,
-  ShieldCheck,
 } from 'lucide-react';
 
 export const PaymentReturnPage: React.FC = () => {
   const location = useLocation();
-  const navigate = useNavigate();
-  const { isAuthenticated, refresh: refreshAuth } = useAuth();
+  const { isAuthenticated, isLoading: isAuthLoading, user } = useAuth();
 
   const [isLoading, setIsLoading] = useState(true);
   const [isPolling, setIsPolling] = useState(false);
@@ -35,88 +32,104 @@ export const PaymentReturnPage: React.FC = () => {
   const [apiError, setApiError] = useState<unknown>(null);
   const [message, setMessage] = useState<string>('');
 
-  const pollIntervalRef = useRef<NodeJS.Timeout | null>(null);
-  const pollTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const pollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const verifyRunRef = useRef(0);
+  const pollStartedAtRef = useRef(0);
+  const pollInFlightRef = useRef(false);
+  const [pollGeneration, setPollGeneration] = useState(0);
 
   // Restore session and verify return
   const verifyReturn = useCallback(async () => {
+    const runId = ++verifyRunRef.current;
+    const isCurrent = () => verifyRunRef.current === runId;
     setIsLoading(true);
     setApiError(null);
+    setPayment(null);
+    setBooking(null);
 
     try {
-      // Refresh auth to ensure session is active
-      await refreshAuth();
-
       // Call backend VNPay return validator
       const queryString = location.search.startsWith('?')
         ? location.search.substring(1)
         : location.search;
+      let paymentId: string | null = null;
+      if (queryString) {
+        const result = await paymentsApi.processVnPayReturn(queryString);
+        if (!isCurrent()) return;
+        setMessage(result.message);
+        paymentId = result.payment?.id ?? null;
+      }
+      paymentId ||= sessionStorage.getItem('lumicine_last_payment_id');
+      if (!paymentId) throw new Error('Không tìm thấy thông tin thanh toán để tra cứu.');
+      if (!isAuthenticated) throw new Error('Vui lòng đăng nhập lại để xem trạng thái thanh toán của bạn.');
 
-      const result = await paymentsApi.processVnPayReturn(queryString);
-      setMessage(result.message);
-
-      if (result.payment) {
-        const ownedPayment = await paymentsApi.getPayment(result.payment.id);
-        const ownedBooking = await bookingApi.getBooking(ownedPayment.bookingId);
-        setPayment(ownedPayment);
-        setBooking(ownedBooking);
+      // Always read through authenticated, ownership-checked endpoints.
+      const ownedPayment = await paymentsApi.getPayment(paymentId);
+      if (!isCurrent()) return;
+      const ownedBooking = await bookingApi.getBooking(ownedPayment.bookingId);
+      if (!isCurrent()) return;
+      setPayment(ownedPayment);
+      setBooking(ownedBooking);
+      if (ownedPayment.status !== 'Pending' && sessionStorage.getItem('lumicine_last_payment_id') === ownedPayment.id) {
+        sessionStorage.removeItem('lumicine_last_payment_id');
+        sessionStorage.removeItem('lumicine_last_booking_id');
+        sessionStorage.removeItem('lumicine_last_payment_request_id');
       }
     } catch (err) {
-      setApiError(err);
+      if (isCurrent()) setApiError(err);
     } finally {
-      setIsLoading(false);
+      if (isCurrent()) setIsLoading(false);
     }
-  }, [location.search, refreshAuth]);
+  }, [location.search, isAuthenticated, user?.id]);
 
   useEffect(() => {
-    verifyReturn();
-  }, [verifyReturn]);
+    if (!isAuthLoading) verifyReturn();
+    return () => { verifyRunRef.current += 1; };
+  }, [verifyReturn, isAuthLoading]);
+
+  useEffect(() => {
+    setPayment(null);
+    setBooking(null);
+  }, [location.search, isAuthenticated, user?.id]);
 
   // Polling loop for non-final states (Pending)
   useEffect(() => {
-    if (payment?.status === 'Pending') {
+    let active = true;
+    if (payment?.status === 'Pending' && booking?.status !== 'Expired') {
       setIsPolling(true);
       setPollSeconds(0);
-
-      const startTime = Date.now();
-
-      pollIntervalRef.current = setInterval(async () => {
-        const elapsed = Math.floor((Date.now() - startTime) / 1000);
-        setPollSeconds(elapsed);
-
-        if (elapsed >= 60) {
-          // Stop polling after 60 seconds
-          if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
-          setIsPolling(false);
-          return;
-        }
-
+      pollStartedAtRef.current = Date.now();
+      const poll = async () => {
+        const elapsed = Math.floor((Date.now() - pollStartedAtRef.current) / 1000);
+        setPollSeconds(Math.min(elapsed, 60));
+        if (elapsed >= 60) { setIsPolling(false); return; }
+        if (pollInFlightRef.current) { pollTimerRef.current = setTimeout(poll, 3000); return; }
+        pollInFlightRef.current = true;
         try {
           const freshPayment = await paymentsApi.getPayment(payment.id);
+          if (!active) return;
           setPayment(freshPayment);
-
-          if (freshPayment.bookingId) {
-            const freshBooking = await bookingApi.getBooking(freshPayment.bookingId);
-            setBooking(freshBooking);
-          }
-
-          if (freshPayment.status !== 'Pending') {
-            if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
-            setIsPolling(false);
-          }
+          const freshBooking = await bookingApi.getBooking(freshPayment.bookingId);
+          if (!active) return;
+          setBooking(freshBooking);
+          if (freshPayment.status !== 'Pending' || freshBooking.status === 'Expired') { setIsPolling(false); return; }
         } catch {
-          // ignore transient poll error
+          // Ignore transient failures and retry within the same 60 second window.
+        } finally {
+          pollInFlightRef.current = false;
         }
-      }, 3000);
+        if (active) pollTimerRef.current = setTimeout(poll, 3000);
+      };
+      pollTimerRef.current = setTimeout(poll, 3000);
     }
 
     return () => {
-      if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
-      if (pollTimeoutRef.current) clearTimeout(pollTimeoutRef.current);
+      active = false;
+      if (pollTimerRef.current) clearTimeout(pollTimerRef.current);
     };
-  }, [payment?.id, payment?.status]);
+  }, [payment?.id, payment?.status, booking?.status, pollGeneration]);
 
-  if (isLoading) {
+  if (isAuthLoading || isLoading) {
     return <LoadingState message="Đang kiểm tra kết quả giao dịch từ cổng thanh toán..." />;
   }
 
@@ -257,11 +270,11 @@ export const PaymentReturnPage: React.FC = () => {
             </Link>
           )}
 
-          {isPending && (
+          {(isPending || isExpired) && (
             <Button
               variant="outline"
               size="lg"
-              onClick={verifyReturn}
+              onClick={() => { setPollGeneration((generation) => generation + 1); void verifyReturn(); }}
               isLoading={isLoading}
               className="w-full sm:w-auto"
             >

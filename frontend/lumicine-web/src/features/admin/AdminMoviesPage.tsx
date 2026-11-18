@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { adminApi } from '../../api/admin';
 import type { MovieSummary, GenreSummary } from '../../api/types';
@@ -14,7 +15,7 @@ import { LoadingState } from '../../components/common/LoadingState';
 import { EmptyState } from '../../components/common/EmptyState';
 import { ErrorAlert } from '../../components/common/ErrorAlert';
 import { Alert } from '../../components/ui/Alert';
-import { formatDateUtc7 } from '../../lib/utils';
+import { formatDateUtc7, parsePositivePage } from '../../lib/utils';
 import {
   Plus,
   Edit2,
@@ -32,10 +33,16 @@ const MAX_POSTER_BYTES = 6 * 1024 * 1024; // 6 MiB
 
 export const AdminMoviesPage: React.FC = () => {
   const queryClient = useQueryClient();
-
-  const [page, setPage] = useState(1);
-  const [search, setSearch] = useState('');
-  const [searchInput, setSearchInput] = useState('');
+  const [searchParams, setSearchParams] = useSearchParams();
+  const page = parsePositivePage(searchParams.get('page'));
+  const search = searchParams.get('search')?.trim() ?? '';
+  const [searchInput, setSearchInput] = useState(search);
+  useEffect(() => setSearchInput(search), [search]);
+  const updateFilters = (updates: Record<string, string>) => {
+    const next = new URLSearchParams(searchParams);
+    Object.entries(updates).forEach(([key, value]) => value ? next.set(key, value) : next.delete(key));
+    setSearchParams(next, { replace: true });
+  };
 
   // Movie Create/Edit modal
   const [isMovieModalOpen, setIsMovieModalOpen] = useState(false);
@@ -75,8 +82,7 @@ export const AdminMoviesPage: React.FC = () => {
 
   const handleSearchSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    setSearch(searchInput.trim());
-    setPage(1);
+    updateFilters({ search: searchInput.trim(), page: '' });
   };
 
   const handleOpenCreate = () => {
@@ -339,7 +345,7 @@ export const AdminMoviesPage: React.FC = () => {
             <Pagination
               currentPage={moviesData.page}
               totalPages={Math.ceil(moviesData.totalCount / moviesData.pageSize)}
-              onPageChange={setPage}
+              onPageChange={(nextPage) => updateFilters({ page: String(nextPage) })}
             />
           </div>
         </Card>

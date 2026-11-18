@@ -6,8 +6,9 @@ export class ApiError extends Error {
   public problem: ProblemDetails;
   public traceId?: string;
   public fieldErrors: Record<string, string[]>;
+  public retryAfterSeconds: number | null;
 
-  constructor(status: number, problem: ProblemDetails) {
+  constructor(status: number, problem: ProblemDetails, retryAfterHeader?: string | null) {
     const message = problem.detail || problem.title || `Request failed with status ${status}`;
     super(message);
     this.name = 'ApiError';
@@ -15,6 +16,17 @@ export class ApiError extends Error {
     this.problem = problem;
     this.traceId = (problem.traceId as string) || ((problem as Record<string, any>)?.extensions?.traceId as string);
     this.fieldErrors = problem.errors || {};
+    const retryAfterValue = retryAfterHeader?.trim();
+    if (!retryAfterValue) this.retryAfterSeconds = null;
+    else {
+      const deltaSeconds = Number(retryAfterValue);
+      const retryAt = Date.parse(retryAfterValue);
+      this.retryAfterSeconds = Number.isFinite(deltaSeconds)
+        ? Math.max(0, Math.ceil(deltaSeconds))
+        : Number.isFinite(retryAt)
+        ? Math.max(0, Math.ceil((retryAt - Date.now()) / 1000))
+        : null;
+    }
   }
 
   public getFieldError(field: string): string | undefined {
@@ -32,6 +44,8 @@ export class ApiError extends Error {
 
 let inMemoryAccessToken: string | null = null;
 let cachedCsrfToken: string | null = null;
+let csrfFetchPromise: Promise<string> | null = null;
+let csrfGeneration = 0;
 let onAuthExpiredCallback: (() => void) | null = null;
 let onTokenRefreshedCallback: ((user: UserInfo) => void) | null = null;
 
@@ -55,21 +69,24 @@ export function setOnTokenRefreshed(callback: (user: UserInfo) => void) {
  * Fetch CSRF token from backend
  */
 export async function fetchCsrfToken(): Promise<string> {
-  const response = await fetch('/api/auth/csrf', {
-    method: 'GET',
-    credentials: 'include',
-    headers: {
-      Accept: 'application/json',
-    },
+  if (csrfFetchPromise) return csrfFetchPromise;
+  const generation = csrfGeneration;
+  const request = (async () => {
+    const response = await fetch('/api/auth/csrf', {
+      method: 'GET',
+      credentials: 'include',
+      headers: { Accept: 'application/json' },
+    });
+    if (!response.ok) throw new Error('Failed to retrieve CSRF token.');
+    const data = await response.json();
+    if (generation === csrfGeneration) cachedCsrfToken = data.requestToken;
+    return data.requestToken as string;
+  })();
+  csrfFetchPromise = request.finally(() => {
+    if (csrfFetchPromise === wrappedRequest) csrfFetchPromise = null;
   });
-
-  if (!response.ok) {
-    throw new Error('Failed to retrieve CSRF token.');
-  }
-
-  const data = await response.json();
-  cachedCsrfToken = data.requestToken;
-  return data.requestToken;
+  const wrappedRequest = csrfFetchPromise;
+  return wrappedRequest;
 }
 
 export async function getCsrfToken(): Promise<string> {
@@ -79,13 +96,15 @@ export async function getCsrfToken(): Promise<string> {
 
 export function clearCsrfToken() {
   cachedCsrfToken = null;
+  csrfGeneration++;
+  csrfFetchPromise = null;
 }
 
 /**
  * Coordinated session refresh
  */
 export async function refreshSession(): Promise<{ accessToken: string; user: UserInfo } | null> {
-  return sessionCoordinator.executeCoordinatedRefresh(async () => {
+  const result = await sessionCoordinator.executeCoordinatedRefresh(async () => {
     try {
       const csrf = await getCsrfToken();
       const response = await fetch('/api/auth/refresh', {
@@ -98,21 +117,22 @@ export async function refreshSession(): Promise<{ accessToken: string; user: Use
       });
 
       if (!response.ok) {
-        setAccessToken(null);
         return null;
       }
 
       const data: LoginResponse = await response.json();
-      setAccessToken(data.accessToken);
-      if (onTokenRefreshedCallback) {
-        onTokenRefreshedCallback(data.user);
-      }
       return { accessToken: data.accessToken, user: data.user };
     } catch {
-      setAccessToken(null);
       return null;
     }
   });
+  if (result) {
+    setAccessToken(result.accessToken);
+    onTokenRefreshedCallback?.(result.user);
+  } else {
+    setAccessToken(null);
+  }
+  return result;
 }
 
 export interface RequestOptions extends RequestInit {
@@ -157,18 +177,14 @@ export async function apiClient<T>(url: string, options: RequestOptions = {}): P
   });
 
   // Handle 401 Unauthorized with token refresh & retry
-  if (response.status === 401 && !isRetry && !isAuthRoute) {
-    const refreshed = await refreshSession();
-    if (refreshed?.accessToken) {
-      return apiClient<T>(url, {
-        ...options,
-        isRetry: true,
-      });
-    } else {
-      if (onAuthExpiredCallback) {
-        onAuthExpiredCallback();
+  if (response.status === 401 && !isAuthRoute && !skipAuth) {
+    if (!isRetry) {
+      const refreshed = await refreshSession();
+      if (refreshed?.accessToken) {
+        return apiClient<T>(url, { ...options, isRetry: true });
       }
     }
+    onAuthExpiredCallback?.();
   }
 
   // Handle 400 Invalid CSRF token retry
@@ -208,7 +224,7 @@ export async function apiClient<T>(url: string, options: RequestOptions = {}): P
         // ignore
       }
     }
-    throw new ApiError(response.status, problem);
+    throw new ApiError(response.status, problem, response.headers.get('Retry-After'));
   }
 
   // Handle 204 No Content
@@ -228,7 +244,7 @@ export async function apiClient<T>(url: string, options: RequestOptions = {}): P
 /**
  * Download file as Blob (e.g. Ticket QR or Admin CSV Export)
  */
-export async function apiDownload(url: string, filename?: string): Promise<Blob> {
+export async function apiDownload(url: string, filename?: string, isRetry = false): Promise<Blob> {
   const headers = new Headers();
   if (inMemoryAccessToken) {
     headers.set('Authorization', `Bearer ${inMemoryAccessToken}`);
@@ -239,6 +255,11 @@ export async function apiDownload(url: string, filename?: string): Promise<Blob>
     headers,
     credentials: 'include',
   });
+
+  if (response.status === 401) {
+    if (!isRetry && (await refreshSession())?.accessToken) return apiDownload(url, filename, true);
+    onAuthExpiredCallback?.();
+  }
 
   if (!response.ok) {
     let problem: ProblemDetails = { status: response.status, title: response.statusText };
@@ -269,7 +290,7 @@ export async function apiDownload(url: string, filename?: string): Promise<Blob>
 /**
  * Multipart file upload (e.g. Movie Poster)
  */
-export async function apiUpload<T>(url: string, formData: FormData): Promise<T> {
+export async function apiUpload<T>(url: string, formData: FormData, isRetry = false): Promise<T> {
   const headers = new Headers();
   if (inMemoryAccessToken) {
     headers.set('Authorization', `Bearer ${inMemoryAccessToken}`);
@@ -281,6 +302,11 @@ export async function apiUpload<T>(url: string, formData: FormData): Promise<T> 
     body: formData,
     credentials: 'include',
   });
+
+  if (response.status === 401) {
+    if (!isRetry && (await refreshSession())?.accessToken) return apiUpload<T>(url, formData, true);
+    onAuthExpiredCallback?.();
+  }
 
   if (!response.ok) {
     let problem: ProblemDetails = { status: response.status, title: response.statusText };

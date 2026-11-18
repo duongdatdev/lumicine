@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { adminApi } from '../../api/admin';
 import type { AdminPaymentView } from '../../api/types';
@@ -12,7 +13,7 @@ import { Pagination } from '../../components/ui/Pagination';
 import { LoadingState } from '../../components/common/LoadingState';
 import { EmptyState } from '../../components/common/EmptyState';
 import { ErrorAlert } from '../../components/common/ErrorAlert';
-import { formatVND, formatDateTimeUtc7 } from '../../lib/utils';
+import { formatVND, formatDateTimeUtc7, parsePositivePage } from '../../lib/utils';
 import {
   CreditCard,
   Search,
@@ -26,10 +27,17 @@ import {
 } from 'lucide-react';
 
 export const AdminPaymentsPage: React.FC = () => {
-  const [page, setPage] = useState(1);
-  const [statusFilter, setStatusFilter] = useState('');
-  const [processingStatusFilter, setProcessingStatusFilter] = useState('');
-  const [bookingIdSearch, setBookingIdSearch] = useState('');
+  const [searchParams, setSearchParams] = useSearchParams();
+  const page = parsePositivePage(searchParams.get('page'));
+  const statusFilter = searchParams.get('status') ?? '';
+  const processingStatusFilter = searchParams.get('processingStatus') ?? '';
+  const bookingIdSearch = searchParams.get('bookingId')?.trim() ?? '';
+  const validBookingId = !bookingIdSearch || /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(bookingIdSearch);
+  const updateFilters = (updates: Record<string, string>) => {
+    const next = new URLSearchParams(searchParams);
+    Object.entries(updates).forEach(([key, value]) => value ? next.set(key, value) : next.delete(key));
+    setSearchParams(next, { replace: true });
+  };
 
   // Refund modal
   const [isRefundModalOpen, setIsRefundModalOpen] = useState(false);
@@ -49,11 +57,12 @@ export const AdminPaymentsPage: React.FC = () => {
       'adminPayments',
       { status: statusFilter, processingStatus: processingStatusFilter, bookingId: bookingIdSearch, page },
     ],
+    enabled: validBookingId,
     queryFn: () =>
       adminApi.listPayments({
         status: statusFilter || undefined,
         processingStatus: processingStatusFilter || undefined,
-        bookingId: bookingIdSearch || undefined,
+        bookingId: validBookingId ? bookingIdSearch || undefined : undefined,
         page,
         pageSize: 15,
       }),
@@ -118,11 +127,10 @@ export const AdminPaymentsPage: React.FC = () => {
           size="sm"
           onClick={() => {
             if (processingStatusFilter === 'RequiresRefundReview') {
-              setProcessingStatusFilter('');
+              updateFilters({ processingStatus: '', page: '' });
             } else {
-              setProcessingStatusFilter('RequiresRefundReview');
+              updateFilters({ processingStatus: 'RequiresRefundReview', page: '' });
             }
-            setPage(1);
           }}
         >
           <AlertTriangle className="w-4 h-4 mr-1.5" />
@@ -147,7 +155,7 @@ export const AdminPaymentsPage: React.FC = () => {
             <label className="block text-sm font-medium text-foreground mb-1.5">Trạng thái thanh toán</label>
             <select
               value={statusFilter}
-              onChange={(e) => { setStatusFilter(e.target.value); setPage(1); }}
+              onChange={(e) => updateFilters({ status: e.target.value, page: '' })}
               className="h-10 w-full rounded-lg border border-border bg-background px-3 text-sm"
             >
               <option value="">Tất cả trạng thái</option>
@@ -161,11 +169,12 @@ export const AdminPaymentsPage: React.FC = () => {
             label="Tìm theo mã Booking (ID)"
             placeholder="Nhập GUID booking..."
             value={bookingIdSearch}
-            onChange={(e) => { setBookingIdSearch(e.target.value); setPage(1); }}
+            onChange={(e) => updateFilters({ bookingId: e.target.value, page: '' })}
           />
+          {!validBookingId && <p className="text-xs text-red-600 sm:col-span-4">Nhập đầy đủ mã Booking dạng GUID để tìm kiếm.</p>}
 
           <div>
-            <Button variant="outline" className="w-full" onClick={() => refetch()}>
+            <Button variant="outline" className="w-full" disabled={!validBookingId} onClick={() => refetch()}>
               <RefreshCw className="w-4 h-4 mr-1.5" /> Làm mới
             </Button>
           </div>
@@ -277,7 +286,7 @@ export const AdminPaymentsPage: React.FC = () => {
             <Pagination
               currentPage={data.page}
               totalPages={Math.ceil(data.totalCount / data.pageSize)}
-              onPageChange={setPage}
+              onPageChange={(nextPage) => updateFilters({ page: String(nextPage) })}
             />
           </div>
         </Card>

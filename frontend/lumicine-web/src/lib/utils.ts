@@ -5,6 +5,11 @@ export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
+export function parsePositivePage(value: string | null): number {
+  const page = Number(value);
+  return Number.isSafeInteger(page) && page > 0 && page <= 2_147_483_647 ? page : 1;
+}
+
 export function formatVND(amount: number): string {
   return new Intl.NumberFormat('vi-VN', {
     style: 'currency',

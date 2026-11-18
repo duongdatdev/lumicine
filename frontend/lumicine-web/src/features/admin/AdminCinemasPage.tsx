@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { adminApi } from '../../api/admin';
 import type { CinemaSummary, RoomSummary } from '../../api/types';
 import { Card } from '../../components/ui/Card';
@@ -23,15 +23,30 @@ import {
   X,
   ChevronRight,
 } from 'lucide-react';
+import { parsePositivePage } from '../../lib/utils';
 
 export const AdminCinemasPage: React.FC = () => {
   const queryClient = useQueryClient();
-  const [page, setPage] = useState(1);
-  const [selectedCinemaId, setSelectedCinemaId] = useState<string | null>(null);
+  const [searchParams, setSearchParams] = useSearchParams();
+  const page = parsePositivePage(searchParams.get('page'));
+  const selectedCinemaId = searchParams.get('cinemaId');
+  const setPage = (nextPage: number) => {
+    const next = new URLSearchParams(searchParams);
+    if (nextPage > 1) next.set('page', String(nextPage));
+    else next.delete('page');
+    next.delete('cinemaId');
+    setSearchParams(next, { replace: true });
+  };
+  const setSelectedCinemaId = (cinemaId: string) => {
+    const next = new URLSearchParams(searchParams);
+    next.set('cinemaId', cinemaId);
+    setSearchParams(next, { replace: true });
+  };
 
   // Cinema modal
   const [isCinemaModalOpen, setIsCinemaModalOpen] = useState(false);
   const [editingCinema, setEditingCinema] = useState<CinemaSummary | null>(null);
+  const [cinemaCode, setCinemaCode] = useState('');
   const [cinemaName, setCinemaName] = useState('');
   const [cinemaCity, setCinemaCity] = useState('');
   const [cinemaAddress, setCinemaAddress] = useState('');
@@ -39,6 +54,7 @@ export const AdminCinemasPage: React.FC = () => {
   // Room modal
   const [isRoomModalOpen, setIsRoomModalOpen] = useState(false);
   const [editingRoom, setEditingRoom] = useState<RoomSummary | null>(null);
+  const [roomCode, setRoomCode] = useState('');
   const [roomName, setRoomName] = useState('');
 
   const [actionError, setActionError] = useState<unknown>(null);
@@ -70,6 +86,7 @@ export const AdminCinemasPage: React.FC = () => {
   // Cinema handlers
   const handleOpenCreateCinema = () => {
     setEditingCinema(null);
+    setCinemaCode('');
     setCinemaName('');
     setCinemaCity('');
     setCinemaAddress('');
@@ -80,6 +97,7 @@ export const AdminCinemasPage: React.FC = () => {
   const handleOpenEditCinema = (cinema: CinemaSummary, e: React.MouseEvent) => {
     e.stopPropagation();
     setEditingCinema(cinema);
+    setCinemaCode(cinema.code);
     setCinemaName(cinema.name);
     setCinemaCity(cinema.city);
     setCinemaAddress(cinema.address);
@@ -94,12 +112,14 @@ export const AdminCinemasPage: React.FC = () => {
     try {
       if (editingCinema) {
         await adminApi.updateCinema(editingCinema.id, {
+          code: cinemaCode,
           name: cinemaName,
           city: cinemaCity,
           address: cinemaAddress,
         });
       } else {
         const created = await adminApi.createCinema({
+          code: cinemaCode,
           name: cinemaName,
           city: cinemaCity,
           address: cinemaAddress,
@@ -129,6 +149,7 @@ export const AdminCinemasPage: React.FC = () => {
   // Room handlers
   const handleOpenCreateRoom = () => {
     setEditingRoom(null);
+    setRoomCode('');
     setRoomName('');
     setActionError(null);
     setIsRoomModalOpen(true);
@@ -136,6 +157,7 @@ export const AdminCinemasPage: React.FC = () => {
 
   const handleOpenEditRoom = (room: RoomSummary) => {
     setEditingRoom(room);
+    setRoomCode(room.code);
     setRoomName(room.name);
     setActionError(null);
     setIsRoomModalOpen(true);
@@ -148,9 +170,9 @@ export const AdminCinemasPage: React.FC = () => {
     setIsSubmitting(true);
     try {
       if (editingRoom) {
-        await adminApi.updateRoom(editingRoom.id, { name: roomName });
+        await adminApi.updateRoom(editingRoom.id, { code: roomCode, name: roomName });
       } else {
-        await adminApi.createRoom(activeCinema.id, { name: roomName });
+        await adminApi.createRoom(activeCinema.id, { code: roomCode, name: roomName });
       }
       setIsRoomModalOpen(false);
       refetchRooms();
@@ -218,6 +240,7 @@ export const AdminCinemasPage: React.FC = () => {
                           <h3 className="font-heading font-bold text-base text-foreground">
                             {cinema.name}
                           </h3>
+                          <span className="text-xs font-mono text-foreground-muted">{cinema.code}</span>
                           <Badge variant={cinema.isActive ? 'success' : 'neutral'} className="text-[10px]">
                             {cinema.isActive ? 'Hoạt động' : 'Tạm dừng'}
                           </Badge>
@@ -310,7 +333,7 @@ export const AdminCinemasPage: React.FC = () => {
                             </Badge>
                           </div>
                           <p className="text-xs text-foreground-muted flex items-center gap-1.5">
-                            <Armchair className="w-3.5 h-3.5 text-primary" /> Sức chứa: {room.seatCapacity} ghế
+                            <Armchair className="w-3.5 h-3.5 text-primary" /> Mã {room.code} · Sức chứa: {room.seatCount} ghế
                           </p>
                         </div>
 
@@ -358,6 +381,13 @@ export const AdminCinemasPage: React.FC = () => {
       >
         <form onSubmit={handleCinemaSubmit} className="space-y-4">
           <Input
+            label="Mã cụm rạp"
+            required
+            maxLength={30}
+            value={cinemaCode}
+            onChange={(e) => setCinemaCode(e.target.value.trim().toUpperCase())}
+          />
+          <Input
             label="Tên cụm rạp"
             required
             value={cinemaName}
@@ -398,6 +428,13 @@ export const AdminCinemasPage: React.FC = () => {
         title={editingRoom ? 'Sửa tên phòng chiếu' : 'Thêm phòng chiếu mới'}
       >
         <form onSubmit={handleRoomSubmit} className="space-y-4">
+          <Input
+            label="Mã phòng chiếu"
+            required
+            maxLength={30}
+            value={roomCode}
+            onChange={(e) => setRoomCode(e.target.value.trim().toUpperCase())}
+          />
           <Input
             label="Tên phòng chiếu"
             required

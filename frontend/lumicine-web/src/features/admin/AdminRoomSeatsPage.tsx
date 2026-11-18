@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { adminApi } from '../../api/admin';
@@ -24,12 +24,9 @@ import {
 export const AdminRoomSeatsPage: React.FC = () => {
   const { id: roomId } = useParams<{ id: string }>();
 
-  const [layoutRows, setLayoutRows] = useState<RoomSeatLayoutRow[]>([
-    { rowLabel: 'A', seatType: 'Normal', seatCount: 10 },
-    { rowLabel: 'B', seatType: 'Normal', seatCount: 10 },
-    { rowLabel: 'C', seatType: 'VIP', seatCount: 10 },
-    { rowLabel: 'D', seatType: 'Couple', seatCount: 6 },
-  ]);
+  const [layoutRows, setLayoutRows] = useState<RoomSeatLayoutRow[]>([]);
+  const initializedRoomId = useRef<string | null>(null);
+  const previousRoomId = useRef(roomId);
 
   const [isSavingLayout, setIsSavingLayout] = useState(false);
   const [layoutSuccess, setLayoutSuccess] = useState(false);
@@ -50,11 +47,44 @@ export const AdminRoomSeatsPage: React.FC = () => {
     refetch: refetchSeats,
   } = useQuery({
     queryKey: ['adminRoomSeats', roomId],
-    queryFn: () => adminApi.getRoomSeats(roomId!, 1, 500),
+    queryFn: async () => {
+      const first = await adminApi.getRoomSeats(roomId!, 1, 100);
+      const remainingPages = await Promise.all(
+        Array.from({ length: Math.ceil(first.totalCount / 100) - 1 }, (_, index) =>
+          adminApi.getRoomSeats(roomId!, index + 2, 100)
+        )
+      );
+      return { ...first, items: [...first.items, ...remainingPages.flatMap((page) => page.items)] };
+    },
     enabled: !!roomId,
   });
 
   const seats = seatsData?.items || [];
+
+  useEffect(() => {
+    if (previousRoomId.current !== roomId) {
+      previousRoomId.current = roomId;
+      initializedRoomId.current = null;
+      setLayoutRows([]);
+      return;
+    }
+    if (!roomId || !seatsData || initializedRoomId.current === roomId) return;
+
+    const rows = Object.entries(seatsData.items.reduce<Record<string, { standardSeats: number; vipSeats: number }>>((groups, seat) => {
+      const counts = groups[seat.rowLabel] ??= { standardSeats: 0, vipSeats: 0 };
+      if (seat.seatType === 'VIP') counts.vipSeats++;
+      else counts.standardSeats++;
+      return groups;
+    }, {}))
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([label, counts]) => ({ label, ...counts }));
+    setLayoutRows(rows.length ? rows : [
+      { label: 'A', standardSeats: 10, vipSeats: 0 },
+      { label: 'B', standardSeats: 10, vipSeats: 0 },
+      { label: 'C', standardSeats: 0, vipSeats: 10 },
+    ]);
+    initializedRoomId.current = roomId;
+  }, [roomId, seatsData]);
 
   // Group existing seats by rowLabel for preview
   const groupedSeats = seats.reduce<Record<string, AdminSeatSummary[]>>((acc, seat) => {
@@ -68,7 +98,7 @@ export const AdminRoomSeatsPage: React.FC = () => {
     const nextLabel = String.fromCharCode(nextCharCode);
     setLayoutRows((prev) => [
       ...prev,
-      { rowLabel: nextLabel, seatType: 'Normal', seatCount: 10 },
+      { label: nextLabel, standardSeats: 10, vipSeats: 0 },
     ]);
   };
 
@@ -132,7 +162,7 @@ export const AdminRoomSeatsPage: React.FC = () => {
             Cấu hình phòng chiếu
           </span>
           <h1 className="font-heading text-3xl font-black text-foreground">
-            {room?.name} (Sức chứa hiện tại: {room?.seatCapacity} ghế)
+            {room?.name} (Sức chứa hiện tại: {room?.seatCount} ghế)
           </h1>
         </div>
       </div>
@@ -146,7 +176,7 @@ export const AdminRoomSeatsPage: React.FC = () => {
                 Thiết lập Layout hàng ghế
               </h2>
               <p className="text-xs text-foreground-muted">
-                Định nghĩa các hàng, loại ghế và số lượng ghế mỗi hàng.
+                Định nghĩa số ghế thường và VIP trên từng hàng.
               </p>
             </div>
             <Button variant="outline" size="sm" onClick={handleAddRow}>
@@ -176,42 +206,42 @@ export const AdminRoomSeatsPage: React.FC = () => {
                     <input
                       type="text"
                       required
-                      value={row.rowLabel}
+                      value={row.label}
                       onChange={(e) =>
-                        handleUpdateRow(index, 'rowLabel', e.target.value.toUpperCase())
+                        handleUpdateRow(index, 'label', e.target.value.toUpperCase())
                       }
                       className="w-full h-9 text-center font-bold font-mono rounded-lg border border-border bg-background-surface uppercase"
                     />
                   </div>
 
-                  <div className="flex-1">
+                  <div className="w-20">
                     <label className="text-[10px] font-bold text-foreground-muted block mb-1">
-                      Loại ghế
+                      Thường
                     </label>
-                    <select
-                      value={row.seatType}
-                      onChange={(e) => handleUpdateRow(index, 'seatType', e.target.value)}
-                      className="w-full h-9 rounded-lg border border-border bg-background-surface px-2 text-xs"
-                    >
-                      <option value="Normal">Normal (Thường)</option>
-                      <option value="VIP">VIP (Cao cấp)</option>
-                      <option value="Couple">Couple (Đôi)</option>
-                    </select>
+                    <input
+                      type="number"
+                      min="0"
+                      max="40"
+                      required
+                      value={row.standardSeats}
+                      onChange={(e) =>
+                        handleUpdateRow(index, 'standardSeats', parseInt(e.target.value, 10) || 0)
+                      }
+                      className="w-full h-9 text-center font-bold rounded-lg border border-border bg-background-surface"
+                    />
                   </div>
 
                   <div className="w-20">
                     <label className="text-[10px] font-bold text-foreground-muted block mb-1">
-                      Số ghế
+                      VIP
                     </label>
                     <input
                       type="number"
-                      min="1"
+                      min="0"
                       max="40"
                       required
-                      value={row.seatCount}
-                      onChange={(e) =>
-                        handleUpdateRow(index, 'seatCount', parseInt(e.target.value, 10) || 1)
-                      }
+                      value={row.vipSeats}
+                      onChange={(e) => handleUpdateRow(index, 'vipSeats', parseInt(e.target.value, 10) || 0)}
                       className="w-full h-9 text-center font-bold rounded-lg border border-border bg-background-surface"
                     />
                   </div>

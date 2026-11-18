@@ -41,7 +41,7 @@ export const DiscoveryChatPage: React.FC = () => {
   const { isAuthenticated } = useAuth();
 
   const [inputMessage, setInputMessage] = useState<string>(initialQuery);
-  const [requestId, setRequestId] = useState<string>(() => generateUUID());
+  const requestRef = useRef<{ key: string; id: string } | null>(null);
   const [isSending, setIsSending] = useState(false);
   const [apiError, setApiError] = useState<unknown>(null);
   const [rateLimitSeconds, setRateLimitSeconds] = useState<number | null>(null);
@@ -147,32 +147,43 @@ export const DiscoveryChatPage: React.FC = () => {
     }
 
     const expectedVersion = activeConversation?.version ?? 0;
+    const message = inputMessage.trim();
+    const requestKey = `${targetConvId}:${message}`;
+    if (requestRef.current?.key !== requestKey) {
+      requestRef.current = { key: requestKey, id: generateUUID() };
+    }
     const payload = {
-      requestId,
+      requestId: requestRef.current.id,
       expectedVersion,
-      message: inputMessage.trim(),
+      message,
     };
 
     try {
       await discoveryApi.sendMessage(targetConvId, payload);
       // Reset input & generate new requestId for next turn
       setInputMessage('');
-      setRequestId(generateUUID());
+      requestRef.current = null;
       await refetchActiveConversation();
       await refetchConversations();
     } catch (err: unknown) {
       if (err instanceof ApiError) {
         if (err.status === 409) {
-          // Version conflict: reload version, retain draft input
-          setApiError('Hội thoại có lượt phản hồi mới. Vui lòng bấm gửi lại tin nhắn của bạn.');
+          const detail = `${err.problem.detail || ''} ${err.message}`.toLowerCase();
+          if (detail.includes('requestid') && detail.includes('different message')) {
+            requestRef.current = null;
+            setApiError('Mã yêu cầu này đã được dùng cho nội dung khác. Hãy gửi lại tin nhắn để tạo yêu cầu mới.');
+          } else {
+            // Version conflict: reload version, retain the request id for an identical retry.
+            setApiError('Hội thoại có lượt phản hồi mới. Vui lòng bấm gửi lại tin nhắn của bạn.');
+          }
           await refetchActiveConversation();
         } else if (err.status === 410) {
           // Gone: conversation expired
           setIsConversationGone(true);
         } else if (err.status === 429) {
           // Rate limit
-          setRateLimitSeconds(30);
-          setApiError('Bạn gửi tin nhắn quá nhanh. Vui lòng thử lại sau giây lát.');
+          setRateLimitSeconds(err.retryAfterSeconds ?? 30);
+          setApiError(`Bạn gửi tin nhắn quá nhanh. Vui lòng thử lại sau ${err.retryAfterSeconds ?? 30} giây.`);
         } else {
           setApiError(err);
         }

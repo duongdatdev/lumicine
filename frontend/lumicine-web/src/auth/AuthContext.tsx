@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useEffect, useState, useCallback } from 'react';
+import React, { createContext, useContext, useEffect, useState, useCallback, useRef } from 'react';
 import type { UserInfo, LoginResponse } from '../api/types';
 import {
   setAccessToken,
@@ -27,26 +27,30 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<UserInfo | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const userRef = useRef<UserInfo | null>(null);
+  const updateSessionUser = useCallback((next: UserInfo | null) => {
+    if (userRef.current?.id !== next?.id) clearPrivateCache();
+    userRef.current = next;
+    setUser(next);
+  }, []);
 
   // Cross-tab message listener & client listeners
   useEffect(() => {
     setOnAuthExpired(() => {
-      setUser(null);
-      clearPrivateCache();
+      updateSessionUser(null);
     });
 
     setOnTokenRefreshed((refreshedUser) => {
-      setUser(refreshedUser);
+      updateSessionUser(refreshedUser);
     });
 
     const unsubscribe = sessionCoordinator.subscribe((msg) => {
       if (msg.type === 'LOGOUT' || msg.type === 'PASSWORD_CHANGED') {
         setAccessToken(null);
-        setUser(null);
-        clearPrivateCache();
+        updateSessionUser(null);
       } else if (msg.type === 'SESSION_REFRESHED') {
         setAccessToken(msg.accessToken);
-        setUser(msg.user);
+        updateSessionUser(msg.user);
       }
     });
 
@@ -56,14 +60,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       .then((result) => {
         if (isMounted) {
           if (result) {
-            setUser(result.user);
+            updateSessionUser(result.user);
           } else {
-            setUser(null);
+            updateSessionUser(null);
           }
         }
       })
       .catch(() => {
-        if (isMounted) setUser(null);
+        if (isMounted) updateSessionUser(null);
       })
       .finally(() => {
         if (isMounted) setIsLoading(false);
@@ -73,7 +77,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       isMounted = false;
       unsubscribe();
     };
-  }, []);
+  }, [updateSessionUser]);
 
   const login = useCallback(async (email: string, password: string): Promise<UserInfo> => {
     const res = await apiClient<LoginResponse>('/api/auth/login', {
@@ -85,14 +89,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     });
 
     setAccessToken(res.accessToken);
-    setUser(res.user);
+    updateSessionUser(res.user);
     sessionCoordinator.broadcast({
       type: 'SESSION_REFRESHED',
       accessToken: res.accessToken,
       user: res.user,
     });
     return res.user;
-  }, []);
+  }, [updateSessionUser]);
 
   const logout = useCallback(async (): Promise<void> => {
     try {
@@ -103,23 +107,25 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       // ignore
     } finally {
       setAccessToken(null);
-      setUser(null);
+      updateSessionUser(null);
       clearPrivateCache();
       sessionCoordinator.broadcast({ type: 'LOGOUT' });
     }
-  }, []);
+  }, [updateSessionUser]);
 
   const refresh = useCallback(async (): Promise<void> => {
     const result = await refreshSession();
     if (result) {
-      setUser(result.user);
+      updateSessionUser(result.user);
     } else {
-      setUser(null);
+      updateSessionUser(null);
     }
-  }, []);
+  }, [updateSessionUser]);
 
   const updateUser = useCallback((updated: Partial<UserInfo>) => {
-    setUser((prev) => (prev ? { ...prev, ...updated } : null));
+    const next = userRef.current ? { ...userRef.current, ...updated } : null;
+    userRef.current = next;
+    setUser(next);
   }, []);
 
   const isAuthenticated = !!user;

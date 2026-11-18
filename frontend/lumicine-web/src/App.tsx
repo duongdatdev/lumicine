@@ -36,6 +36,7 @@ import { DiscoveryChatPage } from './features/discovery/DiscoveryChatPage';
 // Staff Features
 import { StaffSchedulePage } from './features/staff/StaffSchedulePage';
 import { StaffCheckInPage } from './features/staff/StaffCheckInPage';
+import { StaffCatalogPage } from './features/staff/StaffCatalogPage';
 
 // Admin Features
 import { AdminDashboardPage } from './features/admin/AdminDashboardPage';
@@ -124,6 +125,7 @@ export function App() {
               <Route index element={<Navigate to="/staff/schedules" replace />} />
               <Route path="schedules" element={<StaffSchedulePage />} />
               <Route path="checkin" element={<StaffCheckInPage />} />
+              <Route path="catalog" element={<StaffCatalogPage />} />
             </Route>
 
             {/* Admin Routes */}

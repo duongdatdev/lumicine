@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { adminApi } from '../../api/admin';
 import type { GenreSummary } from '../../api/types';
@@ -11,10 +12,18 @@ import { LoadingState } from '../../components/common/LoadingState';
 import { EmptyState } from '../../components/common/EmptyState';
 import { ErrorAlert } from '../../components/common/ErrorAlert';
 import { Plus, Edit2, Trash2, Tags } from 'lucide-react';
+import { parsePositivePage } from '../../lib/utils';
 
 export const AdminGenresPage: React.FC = () => {
   const queryClient = useQueryClient();
-  const [page, setPage] = useState(1);
+  const [searchParams, setSearchParams] = useSearchParams();
+  const page = parsePositivePage(searchParams.get('page'));
+  const setPage = (nextPage: number) => {
+    const next = new URLSearchParams(searchParams);
+    if (nextPage > 1) next.set('page', String(nextPage));
+    else next.delete('page');
+    setSearchParams(next, { replace: true });
+  };
 
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingGenre, setEditingGenre] = useState<GenreSummary | null>(null);

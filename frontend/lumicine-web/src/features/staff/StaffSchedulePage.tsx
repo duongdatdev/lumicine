@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { adminApi } from '../../api/admin';
 import { catalogApi } from '../../api/catalog';
@@ -17,11 +18,17 @@ import { Calendar, Plus, Clock, MapPin, Film, Eye, XCircle, RefreshCw } from 'lu
 
 export const StaffSchedulePage: React.FC = () => {
   const queryClient = useQueryClient();
+  const [searchParams, setSearchParams] = useSearchParams();
 
-  const [dateFilter, setDateFilter] = useState<string>(() => new Date().toISOString().split('T')[0]);
-  const [cinemaFilter, setCinemaFilter] = useState<string>('');
-  const [movieFilter, setMovieFilter] = useState<string>('');
-  const [page, setPage] = useState<number>(1);
+  const dateFilter = searchParams.get('date') ?? new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Ho_Chi_Minh' }).format(new Date());
+  const cinemaFilter = searchParams.get('cinemaId') ?? '';
+  const movieFilter = searchParams.get('movieId') ?? '';
+  const page = Math.max(1, Number(searchParams.get('page')) || 1);
+  const updateFilters = (updates: Record<string, string>) => {
+    const next = new URLSearchParams(searchParams);
+    Object.entries(updates).forEach(([key, value]) => value ? next.set(key, value) : next.delete(key));
+    setSearchParams(next, { replace: true });
+  };
 
   // Modal states
   const [isCreateOpen, setIsCreateOpen] = useState(false);
@@ -91,11 +98,11 @@ export const StaffSchedulePage: React.FC = () => {
     setActionError(null);
     try {
       // Convert local date time to ISO UTC
-      const startAtUtc = new Date(createStartTime).toISOString();
+      const startAt = toUtc7Offset(createStartTime);
       await adminApi.createShowtime({
         movieId: createMovieId,
         roomId: createRoomId,
-        startAtUtc,
+        startAt,
         basePrice: parseFloat(createPrice),
       });
       setIsCreateOpen(false);
@@ -110,9 +117,9 @@ export const StaffSchedulePage: React.FC = () => {
     if (!selectedShowtime) return;
     setActionError(null);
     try {
-      const startAtUtc = new Date(rescheduleStartTime).toISOString();
+      const startAt = toUtc7Offset(rescheduleStartTime);
       await adminApi.rescheduleShowtime(selectedShowtime.id, {
-        startAtUtc,
+        startAt,
         basePrice: parseFloat(reschedulePrice),
       });
       setIsRescheduleOpen(false);
@@ -157,14 +164,14 @@ export const StaffSchedulePage: React.FC = () => {
             label="Ngày chiếu"
             type="date"
             value={dateFilter}
-            onChange={(e) => { setDateFilter(e.target.value); setPage(1); }}
+            onChange={(e) => updateFilters({ date: e.target.value, page: '' })}
           />
 
           <div>
             <label className="block text-sm font-medium text-foreground mb-1.5">Rạp chiếu</label>
             <select
               value={cinemaFilter}
-              onChange={(e) => { setCinemaFilter(e.target.value); setPage(1); }}
+              onChange={(e) => updateFilters({ cinemaId: e.target.value, page: '' })}
               className="h-10 w-full rounded-lg border border-border bg-background-surface px-3 py-2 text-sm"
             >
               <option value="">Tất cả các rạp</option>
@@ -180,7 +187,7 @@ export const StaffSchedulePage: React.FC = () => {
             <label className="block text-sm font-medium text-foreground mb-1.5">Phim</label>
             <select
               value={movieFilter}
-              onChange={(e) => { setMovieFilter(e.target.value); setPage(1); }}
+              onChange={(e) => updateFilters({ movieId: e.target.value, page: '' })}
               className="h-10 w-full rounded-lg border border-border bg-background-surface px-3 py-2 text-sm"
             >
               <option value="">Tất cả các phim</option>
@@ -267,7 +274,7 @@ export const StaffSchedulePage: React.FC = () => {
                               onClick={() => {
                                 setSelectedShowtime(st);
                                 setRescheduleStartTime(
-                                  new Date(st.startAtUtc).toISOString().slice(0, 16)
+                                  utcToUtc7Input(st.startAtUtc)
                                 );
                                 setReschedulePrice(st.basePrice.toString());
                                 setIsRescheduleOpen(true);
@@ -298,7 +305,7 @@ export const StaffSchedulePage: React.FC = () => {
             <Pagination
               currentPage={showtimesData.page}
               totalPages={Math.ceil(showtimesData.totalCount / showtimesData.pageSize)}
-              onPageChange={setPage}
+              onPageChange={(nextPage) => updateFilters({ page: String(nextPage) })}
             />
           </div>
         </Card>
@@ -361,7 +368,7 @@ export const StaffSchedulePage: React.FC = () => {
               <option value="">-- Chọn phòng chiếu --</option>
               {roomsData?.items?.map((r) => (
                 <option key={r.id} value={r.id}>
-                  {r.name} ({r.seatCapacity} ghế)
+                  {r.name} ({r.seatCount} ghế)
                 </option>
               ))}
             </select>
@@ -485,3 +492,11 @@ export const StaffSchedulePage: React.FC = () => {
     </div>
   );
 };
+
+export function toUtc7Offset(datetimeLocal: string): string {
+  return new Date(`${datetimeLocal}:00+07:00`).toISOString();
+}
+
+export function utcToUtc7Input(utcDateTime: string): string {
+  return new Date(new Date(utcDateTime).getTime() + 7 * 60 * 60 * 1000).toISOString().slice(0, 16);
+}

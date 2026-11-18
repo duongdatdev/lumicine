@@ -216,14 +216,14 @@ export const adminApi = {
 
   getCinema: (id: string) => apiClient<CinemaSummary>(`/api/admin/cinemas/${id}`),
 
-  createCinema: (data: { name: string; city: string; address: string }) =>
+  createCinema: (data: { code: string; name: string; city: string; address: string }) =>
     apiClient<CinemaSummary>('/api/admin/cinemas', {
       method: 'POST',
       body: JSON.stringify(data),
       headers: { 'Content-Type': 'application/json' },
     }),
 
-  updateCinema: (id: string, data: { name: string; city: string; address: string }) =>
+  updateCinema: (id: string, data: { code: string; name: string; city: string; address: string }) =>
     apiClient<CinemaSummary>(`/api/admin/cinemas/${id}`, {
       method: 'PUT',
       body: JSON.stringify(data),
@@ -244,14 +244,14 @@ export const adminApi = {
 
   getRoom: (id: string) => apiClient<RoomSummary>(`/api/admin/rooms/${id}`),
 
-  createRoom: (cinemaId: string, data: { name: string }) =>
+  createRoom: (cinemaId: string, data: { code: string; name: string }) =>
     apiClient<RoomSummary>(`/api/admin/cinemas/${cinemaId}/rooms`, {
       method: 'POST',
       body: JSON.stringify(data),
       headers: { 'Content-Type': 'application/json' },
     }),
 
-  updateRoom: (id: string, data: { name: string }) =>
+  updateRoom: (id: string, data: { code: string; name: string }) =>
     apiClient<RoomSummary>(`/api/admin/rooms/${id}`, {
       method: 'PUT',
       body: JSON.stringify(data),
@@ -265,7 +265,7 @@ export const adminApi = {
       headers: { 'Content-Type': 'application/json' },
     }),
 
-  getRoomSeats: (roomId: string, page = 1, pageSize = 500) =>
+  getRoomSeats: (roomId: string, page = 1, pageSize = 100) =>
     apiClient<PagedResult<AdminSeatSummary>>(
       `/api/admin/rooms/${roomId}/seats?page=${page}&pageSize=${pageSize}`
     ),
@@ -306,7 +306,7 @@ export const adminApi = {
   createShowtime: (data: {
     movieId: string;
     roomId: string;
-    startAtUtc: string;
+    startAt: string;
     basePrice: number;
   }) =>
     apiClient<ShowtimeSummary>('/api/admin/showtimes', {
@@ -318,7 +318,7 @@ export const adminApi = {
   rescheduleShowtime: (
     id: string,
     data: {
-      startAtUtc: string;
+      startAt: string;
       basePrice: number;
     }
   ) =>
