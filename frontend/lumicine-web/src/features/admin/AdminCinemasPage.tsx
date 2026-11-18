@@ -256,7 +256,7 @@ export const AdminCinemasPage: React.FC = () => {
 
             <Pagination
               currentPage={cinemasData?.page || 1}
-              totalPages={cinemasData?.totalPages || 1}
+              totalPages={Math.ceil((cinemasData?.totalCount ?? 0) / (cinemasData?.pageSize ?? 1))}
               onPageChange={setPage}
             />
           </div>

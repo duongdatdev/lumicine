@@ -59,8 +59,7 @@ describe('Admin Workspace Features', () => {
         toDate: '2026-11-17',
         generatedAtUtc: new Date().toISOString(),
       },
-      rows: {
-        items: [
+      rows: [
           {
             key: '2026-11-17',
             label: '17/11/2026',
@@ -71,12 +70,10 @@ describe('Admin Workspace Features', () => {
             successfulPaymentCount: 75,
             failedPaymentCount: 2,
           },
-        ],
-        totalCount: 1,
-        page: 1,
-        pageSize: 50,
-        totalPages: 1,
-      },
+      ],
+      totalCount: 1,
+      page: 1,
+      pageSize: 50,
       totals: {
         ticketSalesAmount: 10000000,
         collectedAmount: 10000000,
@@ -107,5 +104,6 @@ describe('Admin Workspace Features', () => {
     expect(screen.getByText('520 vé')).toBeInTheDocument();
     expect(screen.getByText('350')).toBeInTheDocument();
     expect(screen.getByText(/2 giao dịch cần đối soát hoàn tiền/i)).toBeInTheDocument();
+    expect(await screen.findByRole('cell', { name: '17/11/2026' })).toBeInTheDocument();
   });
 });

@@ -51,7 +51,17 @@ public sealed class TicketService(
         await emailDeliveries.EnqueueAsync(bookingId, ct);
     }
 
-    private IQueryable<TicketRow> QueryTickets(Guid? ticketId = null, Guid? ownerUserId = null, Guid? bookingId = null)
+    internal static async Task<CheckInTicketSummary?> GetCheckInSummaryAsync(LumiCineDbContext db, Guid ticketId, CancellationToken ct)
+    {
+        var row = await QueryTickets(db, ticketId: ticketId).SingleOrDefaultAsync(ct);
+        return row is null ? null : new(row.MovieTitle, row.CinemaName, row.RoomName, row.StartAtUtc,
+            row.RowLabel, row.Number, row.SeatType);
+    }
+
+    private IQueryable<TicketRow> QueryTickets(Guid? ticketId = null, Guid? ownerUserId = null, Guid? bookingId = null) =>
+        QueryTickets(db, ticketId, ownerUserId, bookingId);
+
+    private static IQueryable<TicketRow> QueryTickets(LumiCineDbContext db, Guid? ticketId = null, Guid? ownerUserId = null, Guid? bookingId = null)
     {
         // Filters stay ahead of the TicketRow projection so the whole query translates to SQL.
         return from ticket in db.Tickets.AsNoTracking()

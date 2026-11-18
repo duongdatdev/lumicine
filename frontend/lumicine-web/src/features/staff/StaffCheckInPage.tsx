@@ -1,8 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { BrowserQRCodeReader } from '@zxing/browser';
 import { staffApi } from '../../api/staff';
-import { ticketsApi } from '../../api/tickets';
-import type { CheckInResult, TicketDetails } from '../../api/types';
+import type { CheckInResult } from '../../api/types';
 import { Card } from '../../components/ui/Card';
 import { Button } from '../../components/ui/Button';
 import { Input } from '../../components/ui/Input';
@@ -31,12 +30,12 @@ export const StaffCheckInPage: React.FC = () => {
   const [isScannerLocked, setIsScannerLocked] = useState(false);
 
   // Request ID management: retained across network retries, refreshed on next ticket
-  const [checkInRequestId, setCheckInRequestId] = useState<string>(() => generateUUID());
+  const checkInRequestId = useRef<string | null>(null);
+  const scannerLocked = useRef(false);
   const [lastAttemptedCode, setLastAttemptedCode] = useState<string>('');
 
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [checkInResult, setCheckInResult] = useState<CheckInResult | null>(null);
-  const [ticketDetails, setTicketDetails] = useState<TicketDetails | null>(null);
   const [apiError, setApiError] = useState<unknown>(null);
 
   const videoRef = useRef<HTMLVideoElement | null>(null);
@@ -52,13 +51,11 @@ export const StaffCheckInPage: React.FC = () => {
 
   const startCamera = async () => {
     setCameraError(null);
+    if (!videoRef.current || codeReaderRef.current) return;
+    const codeReader = new BrowserQRCodeReader();
+    codeReaderRef.current = codeReader;
+    setIsCameraActive(true);
     try {
-      const codeReader = new BrowserQRCodeReader();
-      codeReaderRef.current = codeReader;
-
-      if (!videoRef.current) return;
-
-      setIsCameraActive(true);
 
       const controls = await codeReader.decodeFromConstraints(
         {
@@ -67,26 +64,24 @@ export const StaffCheckInPage: React.FC = () => {
           },
         },
         videoRef.current,
-        (result, error) => {
-          if (result && !isScannerLocked) {
-            const scannedText = result.getText();
-            if (scannedText) {
-              // Lock scanner immediately upon first QR detect
-              setIsScannerLocked(true);
-              handleProcessCheckIn(scannedText);
-            }
+        (result) => {
+          if (result && codeReaderRef.current === codeReader) {
+            void handleProcessCheckIn(result.getText());
           }
         }
       );
 
-      controlsRef.current = controls;
-    } catch (err: unknown) {
-      setIsCameraActive(false);
+      if (codeReaderRef.current === codeReader) controlsRef.current = controls;
+      else controls.stop();
+    } catch {
+      if (codeReaderRef.current !== codeReader) return;
+      stopCamera();
       setCameraError('Không thể mở camera hoặc quyền truy cập camera bị từ chối.');
     }
   };
 
   const stopCamera = () => {
+    codeReaderRef.current = null;
     if (controlsRef.current) {
       try {
         controlsRef.current.stop();
@@ -100,32 +95,24 @@ export const StaffCheckInPage: React.FC = () => {
 
   const handleProcessCheckIn = async (ticketCode: string, isRetry = false) => {
     const trimmedCode = ticketCode.trim();
-    if (!trimmedCode) return;
+    if (!trimmedCode || (scannerLocked.current && !isRetry)) return;
+
+    scannerLocked.current = true;
+    setIsScannerLocked(true);
+    checkInRequestId.current ??= generateUUID();
 
     setIsSubmitting(true);
     setApiError(null);
     setLastAttemptedCode(trimmedCode);
 
-    // If it's a retry, we reuse the exact same checkInRequestId
-    const currentReqId = isRetry ? checkInRequestId : checkInRequestId;
-
     try {
       const result = await staffApi.checkIn({
-        requestId: currentReqId,
+        requestId: checkInRequestId.current,
         ticketCode: trimmedCode,
       });
 
       setCheckInResult(result);
 
-      // If checkIn has a ticketId, fetch ticket details for full UI display
-      if (result.ticketId) {
-        try {
-          const details = await ticketsApi.getTicket(result.ticketId);
-          setTicketDetails(details);
-        } catch {
-          // ignore
-        }
-      }
     } catch (err: unknown) {
       setApiError(err);
     } finally {
@@ -136,20 +123,19 @@ export const StaffCheckInPage: React.FC = () => {
   const handleManualSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!manualTicketCode.trim()) return;
-    setIsScannerLocked(true);
-    handleProcessCheckIn(manualTicketCode.trim());
+    void handleProcessCheckIn(manualTicketCode);
   };
 
   // Reset to scan next ticket
   const handleNextTicket = () => {
     setCheckInResult(null);
-    setTicketDetails(null);
     setApiError(null);
     setManualTicketCode('');
     setLastAttemptedCode('');
+    scannerLocked.current = false;
     setIsScannerLocked(false);
     // Generate a fresh new RequestId for the next ticket
-    setCheckInRequestId(generateUUID());
+    checkInRequestId.current = null;
   };
 
   // Retry the current ticket with the same RequestId
@@ -159,6 +145,7 @@ export const StaffCheckInPage: React.FC = () => {
     }
   };
 
+  const ticketDetails = checkInResult?.ticket;
   const isSuccess = checkInResult?.outcome === 'Success';
   const isDuplicate = checkInResult?.outcome === 'DuplicateScan';
   const isRejected = checkInResult && !isSuccess && !isDuplicate;

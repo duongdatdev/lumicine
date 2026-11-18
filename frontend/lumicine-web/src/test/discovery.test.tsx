@@ -91,7 +91,6 @@ describe('Discovery AI Chat Feature', () => {
       totalCount: 1,
       page: 1,
       pageSize: 50,
-      totalPages: 1,
     });
 
     vi.spyOn(discoveryApi, 'getConversation').mockResolvedValueOnce(mockDetails);

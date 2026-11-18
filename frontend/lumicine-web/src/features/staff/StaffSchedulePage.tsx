@@ -297,7 +297,7 @@ export const StaffSchedulePage: React.FC = () => {
           <div className="p-4 border-t border-border">
             <Pagination
               currentPage={showtimesData.page}
-              totalPages={showtimesData.totalPages}
+              totalPages={Math.ceil(showtimesData.totalCount / showtimesData.pageSize)}
               onPageChange={setPage}
             />
           </div>

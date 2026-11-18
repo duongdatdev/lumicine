@@ -48,8 +48,9 @@ public sealed class CheckInService(LumiCineDbContext db, TimeProvider clock) : I
             if (result == CheckInLogResult.Success)
                 ticket!.MarkUsed(now);
             await db.SaveChangesAsync(ct);
+            var response = await BuildResultAsync(request.RequestId, result, ticket, booking, showtime, now, ct);
             await tx.CommitAsync(ct);
-            return BuildResult(request.RequestId, result, ticket, booking, showtime, now);
+            return response;
         }
         catch (DbUpdateException ex) when (FindPostgres(ex)?.SqlState == PostgresErrorCodes.UniqueViolation)
         {
@@ -80,7 +81,7 @@ public sealed class CheckInService(LumiCineDbContext db, TimeProvider clock) : I
         }
         // The replay answers with the recorded outcome exactly as it was logged.
         var result = replay.Result;
-        return BuildResult(requestId, result, ticket, booking, showtime, now);
+        return await BuildResultAsync(requestId, result, ticket, booking, showtime, now, ct);
     }
 
     private static CheckInLogResult Classify(Ticket? ticket, Booking? booking, Showtime? showtime, DateTime now)
@@ -100,19 +101,25 @@ public sealed class CheckInService(LumiCineDbContext db, TimeProvider clock) : I
         return CheckInLogResult.Success;
     }
 
-    private static CheckInResult BuildResult(
-        Guid requestId, CheckInLogResult result, Ticket? ticket, Booking? booking, Showtime? showtime, DateTime now) =>
-        new(requestId,
+    private async Task<CheckInResult> BuildResultAsync(
+        Guid requestId, CheckInLogResult result, Ticket? ticket, Booking? booking, Showtime? showtime, DateTime now, CancellationToken ct)
+    {
+        var accepted = result is CheckInLogResult.Success or CheckInLogResult.DuplicateScan;
+        return new(requestId,
             MapOutcome(result),
             ticket?.Id,
             ticket?.Code,
             booking?.Id,
             booking?.Code,
             showtime?.Id,
-            result is CheckInLogResult.Success or CheckInLogResult.DuplicateScan ? ticket?.UsedAtUtc : null,
+            accepted ? ticket?.UsedAtUtc : null,
             showtime is null ? null : showtime.StartAtUtc.AddMinutes(-30),
             showtime?.EndAtUtc,
-            now);
+            now)
+        {
+            Ticket = accepted && ticket is not null ? await TicketService.GetCheckInSummaryAsync(db, ticket.Id, ct) : null
+        };
+    }
 
     private static string MapOutcome(CheckInLogResult result) => result switch
     {

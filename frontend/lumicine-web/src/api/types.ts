@@ -14,7 +14,6 @@ export interface PagedResult<T> {
   totalCount: number;
   page: number;
   pageSize: number;
-  totalPages: number;
 }
 
 // Authentication
@@ -164,7 +163,7 @@ export interface PaymentView {
   merchantReference: string;
   amount: number;
   currency: string;
-  status: string; // "Pending" | "Success" | "Failed" | "Expired" | "RequiresRefundReview"
+  status: string; // "Pending" | "Succeeded" | "Failed"
   processingStatus: string;
   paymentUrl?: string | null;
   createdAtUtc: string;
@@ -311,6 +310,7 @@ export interface CheckInResult {
   windowStartsAtUtc?: string | null;
   windowEndsAtUtc?: string | null;
   serverTimeUtc: string;
+  ticket?: Pick<TicketDetails, 'movieTitle' | 'cinemaName' | 'roomName' | 'startAtUtc' | 'rowLabel' | 'number' | 'seatType'> | null;
 }
 
 // Admin Reporting
@@ -391,23 +391,33 @@ export interface ShowtimeReportRow {
   status: string;
   capacity: number;
   soldSeats: number;
-  ticketSalesAmount: number;
-  collectedAmount: number;
+  heldSeats: number;
+  availableSeats: number;
   occupancyRate: number;
+  validTickets: number;
+  usedTickets: number;
+  checkInRate: number;
+  issuedTicketAmount: number;
 }
 
 export interface ShowtimeReportTotals {
-  showtimeCount: number;
   capacity: number;
   soldSeats: number;
-  ticketSalesAmount: number;
-  collectedAmount: number;
+  heldSeats: number;
+  availableSeats: number;
   occupancyRate: number;
+  validTickets: number;
+  usedTickets: number;
+  checkInRate: number;
+  issuedTicketAmount: number;
 }
 
 export interface AdminReportResult<TRow, TTotals> {
   metadata: ReportMetadata;
-  rows: PagedResult<TRow>;
+  rows: TRow[];
+  totalCount: number;
+  page: number;
+  pageSize: number;
   totals: TTotals;
 }
 

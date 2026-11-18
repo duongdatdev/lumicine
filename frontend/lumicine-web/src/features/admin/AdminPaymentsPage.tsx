@@ -152,10 +152,8 @@ export const AdminPaymentsPage: React.FC = () => {
             >
               <option value="">Tất cả trạng thái</option>
               <option value="Pending">Pending (Chờ xử lý)</option>
-              <option value="Success">Success (Thành công)</option>
+              <option value="Succeeded">Thành công</option>
               <option value="Failed">Failed (Thất bại)</option>
-              <option value="Expired">Expired (Hết hạn)</option>
-              <option value="RequiresRefundReview">RequiresRefundReview (Cần hoàn tiền)</option>
             </select>
           </div>
 
@@ -199,10 +197,8 @@ export const AdminPaymentsPage: React.FC = () => {
               <tbody className="divide-y divide-border">
                 {data.items.map((item) => {
                   const p = item.payment;
-                  const isSuccess = p.status === 'Success';
-                  const isRequiresRefund =
-                    p.status === 'RequiresRefundReview' ||
-                    p.processingStatus === 'RequiresRefundReview';
+                  const isSuccess = p.status === 'Succeeded';
+                  const isRequiresRefund = p.processingStatus === 'RequiresRefundReview';
 
                   return (
                     <tr
@@ -280,7 +276,7 @@ export const AdminPaymentsPage: React.FC = () => {
           <div className="p-4 border-t border-border">
             <Pagination
               currentPage={data.page}
-              totalPages={data.totalPages}
+              totalPages={Math.ceil(data.totalCount / data.pageSize)}
               onPageChange={setPage}
             />
           </div>

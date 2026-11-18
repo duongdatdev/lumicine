@@ -93,7 +93,7 @@ export const AdminDashboardPage: React.FC = () => {
     }
   };
 
-  const chartData = (revenueReport?.rows?.items || []).map((row) => ({
+  const chartData = (revenueReport?.rows ?? []).map((row) => ({
     name: row.label || row.key,
     'Doanh thu vé': Number(row.ticketSalesAmount),
     'Thực thu': Number(row.collectedAmount),
@@ -349,8 +349,8 @@ export const AdminDashboardPage: React.FC = () => {
               </tr>
             </thead>
             <tbody className="divide-y divide-border">
-              {revenueReport?.rows?.items?.map((row, idx) => (
-                <tr key={idx} className="hover:bg-background-subtle/40 transition-colors">
+              {revenueReport?.rows.map((row) => (
+                <tr key={row.key} className="hover:bg-background-subtle/40 transition-colors">
                   <td className="px-4 py-3 font-medium text-foreground">{row.label || row.key}</td>
                   <td className="px-4 py-3 font-semibold text-foreground">
                     {formatVND(row.ticketSalesAmount)}

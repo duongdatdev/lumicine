@@ -35,6 +35,10 @@ public sealed class CheckInEndpointTests(PostgresDatabaseFixture fixture)
         Assert.Equal(setup.ShowtimeId, result.ShowtimeId);
         Assert.NotNull(result.UsedAtUtc);
         Assert.NotNull(result.WindowStartsAtUtc);
+        Assert.NotNull(result.Ticket);
+        Assert.False(string.IsNullOrWhiteSpace(result.Ticket.MovieTitle));
+        Assert.False(string.IsNullOrWhiteSpace(result.Ticket.RoomName));
+        Assert.True(result.Ticket.Number > 0);
         Assert.Equal(requestId, result.RequestId);
         await using var db = fixture.CreateDbContext();
         Assert.Equal(TicketStatus.Used, (await db.Tickets.SingleAsync(x => x.Id == setup.TicketId)).Status);
@@ -105,6 +109,7 @@ public sealed class CheckInEndpointTests(PostgresDatabaseFixture fixture)
         Assert.Equal(HttpStatusCode.Conflict, duplicate.StatusCode);
         var duplicateResult = (await duplicate.Content.ReadFromJsonAsync<CheckInResult>())!;
         Assert.Equal(CheckInOutcomes.DuplicateScan, duplicateResult.Outcome);
+        Assert.Equal(result.Ticket, duplicateResult.Ticket);
         Assert.NotNull(duplicateResult.UsedAtUtc);
     }
 

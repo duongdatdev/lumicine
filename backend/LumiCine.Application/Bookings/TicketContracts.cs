@@ -47,7 +47,14 @@ public sealed record CheckInResult(
     DateTime? UsedAtUtc,
     DateTime? WindowStartsAtUtc,
     DateTime? WindowEndsAtUtc,
-    DateTime ServerTimeUtc);
+    DateTime ServerTimeUtc)
+{
+    public CheckInTicketSummary? Ticket { get; init; }
+}
+
+public sealed record CheckInTicketSummary(
+    string MovieTitle, string CinemaName, string RoomName, DateTime StartAtUtc,
+    string RowLabel, int Number, string SeatType);
 
 public static class CheckInOutcomes
 {

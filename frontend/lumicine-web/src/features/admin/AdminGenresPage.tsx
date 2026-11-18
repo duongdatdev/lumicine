@@ -146,7 +146,7 @@ export const AdminGenresPage: React.FC = () => {
           <div className="p-4 border-t border-border">
             <Pagination
               currentPage={data.page}
-              totalPages={data.totalPages}
+              totalPages={Math.ceil(data.totalCount / data.pageSize)}
               onPageChange={setPage}
             />
           </div>

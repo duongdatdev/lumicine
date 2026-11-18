@@ -248,7 +248,7 @@ export const HomePage: React.FC = () => {
 
             <Pagination
               currentPage={moviesData.page}
-              totalPages={moviesData.totalPages}
+              totalPages={Math.ceil(moviesData.totalCount / moviesData.pageSize)}
               onPageChange={handlePageChange}
             />
           </div>

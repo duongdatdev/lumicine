@@ -56,15 +56,10 @@ export const PaymentReturnPage: React.FC = () => {
       setMessage(result.message);
 
       if (result.payment) {
-        setPayment(result.payment);
-        if (result.payment.bookingId) {
-          try {
-            const b = await bookingApi.getBooking(result.payment.bookingId);
-            setBooking(b);
-          } catch {
-            // ignore if not loaded yet
-          }
-        }
+        const ownedPayment = await paymentsApi.getPayment(result.payment.id);
+        const ownedBooking = await bookingApi.getBooking(ownedPayment.bookingId);
+        setPayment(ownedPayment);
+        setBooking(ownedBooking);
       }
     } catch (err) {
       setApiError(err);
@@ -79,10 +74,7 @@ export const PaymentReturnPage: React.FC = () => {
 
   // Polling loop for non-final states (Pending)
   useEffect(() => {
-    const isFinalStatus = (st?: string) =>
-      st === 'Success' || st === 'Failed' || st === 'Expired' || st === 'RequiresRefundReview';
-
-    if (payment && !isFinalStatus(payment.status)) {
+    if (payment?.status === 'Pending') {
       setIsPolling(true);
       setPollSeconds(0);
 
@@ -108,7 +100,7 @@ export const PaymentReturnPage: React.FC = () => {
             setBooking(freshBooking);
           }
 
-          if (isFinalStatus(freshPayment.status)) {
+          if (freshPayment.status !== 'Pending') {
             if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
             setIsPolling(false);
           }
@@ -129,11 +121,13 @@ export const PaymentReturnPage: React.FC = () => {
   }
 
   const status = payment?.status || 'Unknown';
-  const isSuccess = status === 'Success' || booking?.status === 'Confirmed';
+  const isRequiresRefundReview = payment?.processingStatus === 'RequiresRefundReview';
+  const isRefundRecorded = payment?.processingStatus === 'RefundRecorded';
+  const isSuccess = !isRequiresRefundReview && !isRefundRecorded &&
+    (payment?.processingStatus === 'Fulfilled' || booking?.status === 'Confirmed');
   const isFailed = status === 'Failed';
-  const isExpired = status === 'Expired';
-  const isRequiresRefundReview = status === 'RequiresRefundReview';
-  const isPending = status === 'Pending';
+  const isExpired = status === 'Pending' && booking?.status === 'Expired';
+  const isPending = status === 'Pending' && !isExpired && !isSuccess;
 
   return (
     <div className="container mx-auto px-4 py-12 max-w-2xl">
@@ -210,6 +204,8 @@ export const PaymentReturnPage: React.FC = () => {
             </p>
           </div>
         )}
+
+        {isRefundRecorded && <Alert variant="info">Khoản hoàn tiền đã được ghi nhận.</Alert>}
 
         <ErrorAlert error={apiError} />
 

@@ -148,7 +148,7 @@ export const TicketsListPage: React.FC = () => {
 
           <Pagination
             currentPage={data.page}
-            totalPages={data.totalPages}
+            totalPages={Math.ceil(data.totalCount / data.pageSize)}
             onPageChange={setPage}
           />
         </div>
